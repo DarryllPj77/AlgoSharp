@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AlgoSharp.Core/AlgoSharp.Core.csproj" />
+    <Project Path="src/AlgoSharp.Web/AlgoSharp.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AlgoSharp.Core.Tests/AlgoSharp.Core.Tests.csproj" />
+  </Folder>
+</Solution>

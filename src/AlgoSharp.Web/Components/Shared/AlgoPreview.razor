@@ -1,0 +1,94 @@
+@* Small CSS-only previews; they animate while the card is hovered or focused. *@
+<div class="pv">
+    @switch (Kind)
+    {
+        case "bubble":
+        case "selection":
+        case "insertion":
+        case "quick":
+            <div class="pv-bars pv-@Kind">
+                @foreach (int h in new[] { 38, 62, 74, 30, 52, 86, 44 })
+                {
+                    <span style="height:@(h)px"></span>
+                }
+            </div>
+            break;
+        case "merge":
+            <div class="pv-bars pv-merge">
+                @foreach (int h in new[] { 30, 52, 74, 86 })
+                {
+                    <span style="height:@(h)px"></span>
+                }
+                <i></i>
+                @foreach (int h in new[] { 38, 44, 62, 70 })
+                {
+                    <span style="height:@(h)px"></span>
+                }
+            </div>
+            break;
+        case "array":
+        case "scan":
+            <div class="pv-cells">
+                @foreach (var v in new[] { "12", "45", "7", "23", "56" })
+                {
+                    <span class="hl">@v</span>
+                }
+            </div>
+            break;
+        case "search":
+            <div class="pv-cells" style="position:relative">
+                <div class="pv-window"></div>
+                @foreach (var v in new[] { "3", "9", "14", "21", "27", "33" })
+                {
+                    <span>@v</span>
+                }
+            </div>
+            break;
+        case "list":
+            <div class="pv-list">
+                <span class="n walk">10</span><span class="a"></span>
+                <span class="n walk">20</span><span class="a"></span>
+                <span class="n walk">30</span><span class="a"></span>
+                <span class="n" style="border-style:dashed;color:var(--text-3)">null</span>
+            </div>
+            break;
+        case "stack":
+            <div class="pv-stack"><span></span><span></span><span></span><span class="top"></span></div>
+            break;
+        case "queue":
+            <div style="overflow:hidden;width:120px;padding:4px 2px">
+                <div class="pv-queue">@for (int i = 0; i < 6; i++) { <span></span> }</div>
+            </div>
+            break;
+        case "tree":
+        case "heap":
+            <svg class="pv-svg" viewBox="0 0 150 90" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M75 18 L40 48 M75 18 L110 48 M40 48 L22 76 M40 48 L58 76 M110 48 L128 76" />
+                <circle cx="75" cy="18" r="10" class="on" /><circle cx="40" cy="48" r="10" fill="var(--surface-3)" /><circle cx="110" cy="48" r="10" fill="var(--surface-3)" />
+                <circle cx="22" cy="76" r="9" fill="var(--surface-3)" /><circle cx="58" cy="76" r="9" fill="var(--surface-3)" /><circle cx="128" cy="76" r="9" fill="var(--surface-3)" />
+            </svg>
+            break;
+        case "graph":
+            <svg class="pv-svg" viewBox="0 0 150 90" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M28 24 L80 14 L124 40 L96 76 L40 70 Z M28 24 L96 76 M80 14 L40 70" />
+                <circle cx="28" cy="24" r="9" class="on" /><circle cx="80" cy="14" r="9" fill="var(--surface-3)" /><circle cx="124" cy="40" r="9" fill="var(--surface-3)" />
+                <circle cx="96" cy="76" r="9" fill="var(--surface-3)" /><circle cx="40" cy="70" r="9" fill="var(--surface-3)" />
+            </svg>
+            break;
+        default:
+            <svg class="pv-svg" viewBox="0 0 150 90" fill="none" stroke="currentColor" stroke-width="1.5">
+                @for (int r = 0; r < 3; r++)
+                {
+                    @for (int c = 0; c < 5; c++)
+                    {
+                        <rect x="@(12 + c * 26)" y="@(10 + r * 25)" width="22" height="20" rx="4" class="@(r == 1 && c == 2 ? "on" : "")" fill="var(--surface-3)" />
+                    }
+                }
+            </svg>
+            break;
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Kind { get; set; } = "";
+}

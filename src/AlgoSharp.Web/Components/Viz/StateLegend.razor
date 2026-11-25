@@ -1,0 +1,22 @@
+<div class="stage-legend">
+    @foreach (var (state, label) in Items)
+    {
+        <span><i style="background:var(--st-@state)"></i>@label</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Kind { get; set; } = "";
+
+    private IEnumerable<(string, string)> Items => Kind switch
+    {
+        "bubble-sort" => [("compare", "Comparing"), ("swap", "Swapped"), ("sorted", "Final position")],
+        "selection-sort" => [("compare", "Scanning"), ("min", "Current minimum"), ("swap", "Swapped"), ("sorted", "Sorted prefix")],
+        "insertion-sort" => [("key", "Key being inserted"), ("compare", "Comparing"), ("swap", "Shifted"), ("sorted", "Sorted prefix")],
+        "merge-sort" => [("compare", "Comparing halves"), ("new", "Written back"), ("active", "Merged range"), ("sorted", "Done")],
+        "quick-sort" => [("pivot", "Pivot"), ("compare", "Comparing"), ("swap", "Swapped"), ("sorted", "Pivot placed")],
+        "linear-search" or "binary-search" => [("compare", "Checking"), ("visited", "Ruled out"), ("found", "Found")],
+        "linked-list" => [("active", "Walking"), ("compare", "Comparing"), ("new", "New node"), ("removed", "Removed"), ("found", "Found")],
+        _ => [("compare", "Checking"), ("swap", "Moved"), ("new", "Written"), ("removed", "Removed"), ("found", "Result")],
+    };
+}

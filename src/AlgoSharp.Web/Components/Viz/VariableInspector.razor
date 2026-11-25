@@ -1,0 +1,22 @@
+@if (Vars.Count == 0)
+{
+    <p class="vars-empty">No variables in scope for this step.</p>
+}
+else
+{
+    <div class="vars">
+        @foreach (var v in Vars)
+        {
+            bool changed = Previous is not null && !Previous.Any(p => p.Name == v.Name && p.Value == v.Value);
+            <div @key="@(v.Name + "=" + v.Value)" class="var @(changed ? "changed" : "")">
+                <div class="k">@v.Name</div>
+                <div class="v" title="@v.Value">@v.Value</div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<VarView> Vars { get; set; } = [];
+    [Parameter] public IReadOnlyList<VarView>? Previous { get; set; }
+}

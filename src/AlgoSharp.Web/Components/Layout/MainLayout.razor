@@ -1,0 +1,62 @@
+@inherits LayoutComponentBase
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<header class="topbar">
+    <div class="topbar-inner">
+        <a class="logo" href="/" aria-label="AlgoSharp home">
+            <span class="logo-mark">A<span>#</span></span>
+            AlgoSharp
+        </a>
+        <nav class="nav">
+            <NavLink href="/" Match="NavLinkMatch.All">Library</NavLink>
+            <NavLink href="/visualize/bubble-sort">Sorting</NavLink>
+            <NavLink href="/visualize/array">Arrays</NavLink>
+            <NavLink href="/visualize/linked-list">Linked Lists</NavLink>
+            <NavLink href="/visualize/stack">Stacks &amp; Queues</NavLink>
+        </nav>
+        <div class="topbar-right">
+            <button class="icon-btn" title="Toggle light / dark" aria-label="Toggle color theme" @onclick="ToggleTheme">
+                <Icon Name="@(theme == "dark" ? "sun" : "moon")" />
+            </button>
+            <a class="icon-btn" href="https://github.com/DarryllPj77/AlgoSharp" target="_blank" rel="noopener" title="Source on GitHub" aria-label="Source on GitHub">
+                <Icon Name="github" />
+            </a>
+        </div>
+    </div>
+</header>
+
+<main>
+    @Body
+</main>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">✕</span>
+</div>
+
+@code {
+    private IJSObjectReference? module;
+    private string theme = "dark";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/app.js");
+        theme = await module.InvokeAsync<string>("getTheme");
+        StateHasChanged();
+    }
+
+    private async Task ToggleTheme()
+    {
+        if (module is null) return;
+        theme = await module.InvokeAsync<string>("toggleTheme");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (module is null) return;
+        try { await module.DisposeAsync(); } catch (JSDisconnectedException) { }
+    }
+}

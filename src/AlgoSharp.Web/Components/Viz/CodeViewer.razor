@@ -1,0 +1,52 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="code" @ref="container" role="region" aria-label="C# source code">
+    @for (int i = 0; i < html.Length; i++)
+    {
+        int line = i + 1;
+        <div class="code-line @(line == ActiveLine ? "active" : "")">
+            <span class="ln">@line</span>
+            <span class="src">@((MarkupString)html[i])</span>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CodeRegion Region { get; set; } = default!;
+    [Parameter] public int ActiveLine { get; set; }
+    [Parameter] public bool AutoScroll { get; set; } = true;
+
+    private ElementReference container;
+    private IJSObjectReference? module;
+    private string[] html = [];
+    private CodeRegion? rendered;
+    private int scrolledTo = -1;
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(rendered, Region)) return;
+        rendered = Region;
+        html = Region.Lines.Select(l => l.Length == 0 ? " " : CSharpHighlighter.Highlight(l)).ToArray();
+        scrolledTo = -1;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!AutoScroll || ActiveLine == scrolledTo) return;
+        scrolledTo = ActiveLine;
+        try
+        {
+            module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/app.js");
+            await module.InvokeVoidAsync("scrollActiveLine", container);
+        }
+        catch (JSDisconnectedException) { }
+        catch (TaskCanceledException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (module is null) return;
+        try { await module.DisposeAsync(); } catch (JSDisconnectedException) { }
+    }
+}

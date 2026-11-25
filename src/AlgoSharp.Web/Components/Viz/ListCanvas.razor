@@ -1,0 +1,78 @@
+@using System.Globalization
+@* Renders a ListFrame: nodes, Next arrows and named references. Positions are computed here
+   in pixels; CSS transitions animate nodes sliding and arrows re-targeting. *@
+
+<div class="ll-wrap">
+    <div class="ll" style="width:@(Px(Width));height:@(Px(Height))">
+        @foreach (var link in Frame.Links)
+        {
+            if (!pos.TryGetValue(link.FromId, out var a) || !pos.TryGetValue(link.ToId, out var b)) continue;
+            <div @key="@("l:" + link.FromId)" class="ll-link s-@link.State.ToString().ToLowerInvariant()" style="@LinkStyle(a.X + NodeW - 11, a.Y + NodeH / 2, b.X - 1, b.Y + NodeH / 2)"></div>
+        }
+        @if (lastChainId is int last && pos.TryGetValue(last, out var lp))
+        {
+            <div @key="@("l:" + last)" class="ll-link null-link" style="@LinkStyle(lp.X + NodeW - 11, lp.Y + NodeH / 2, nullPos.X - 1, nullPos.Y + NodeH / 2)"></div>
+        }
+
+        @foreach (var n in Frame.Nodes)
+        {
+            var p = pos[n.Id];
+            <div @key="n.Id" class="ll-node s-@n.State.ToString().ToLowerInvariant()" style="--x:@Px(p.X);--y:@Px(p.Y)">
+                <span class="v">@n.Value</span>
+                <span class="nx"></span>
+                @if (n.Row == 0)
+                {
+                    <span class="idx-l">[@((int)n.Pos)]</span>
+                }
+            </div>
+        }
+        <div class="ll-null" style="--x:@Px(nullPos.X);--y:@Px(nullPos.Y)">null</div>
+
+        @foreach (var ptr in Frame.Pointers)
+        {
+            var (x, y, row) = ptr.NodeId >= 0 && pos.TryGetValue(ptr.NodeId, out var np)
+                ? (np.X, np.Y, np.Row)
+                : (nullPos.X - 12, nullPos.Y, 0);
+            double py = row == 0 ? y - 26 - ptr.Stack * 23 : y + NodeH + 4 + ptr.Stack * 23;
+            <div @key="@("p:" + ptr.Name)" class="ll-ptr @(row == 0 ? "down" : "up") @ArrayCanvas.PointerClass(ptr.Name)" style="--x:@Px(x);--y:@Px(py)">
+                <span>@ptr.Name</span>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ListFrame Frame { get; set; } = default!;
+
+    private const double NodeW = 76, NodeH = 48, Spacing = 120, X0 = 20, Y0 = 82, RowGap = 116;
+
+    private readonly Dictionary<int, (double X, double Y, int Row)> pos = [];
+    private (double X, double Y) nullPos;
+    private int? lastChainId;
+    private double Width, Height;
+
+    protected override void OnParametersSet()
+    {
+        pos.Clear();
+        double minPos = Frame.Nodes.Count == 0 ? 0 : Math.Min(0, Frame.Nodes.Min(n => n.Pos));
+        double maxPos = Math.Max(Frame.Length, Frame.Nodes.Count == 0 ? 0 : Frame.Nodes.Max(n => n.Pos));
+        foreach (var n in Frame.Nodes)
+        {
+            pos[n.Id] = (X0 + (n.Pos - minPos) * Spacing, Y0 + n.Row * RowGap, n.Row);
+        }
+        nullPos = (X0 + (Frame.Length - minPos) * Spacing, Y0);
+        lastChainId = Frame.Nodes.Where(n => n.Row == 0).OrderBy(n => n.Pos).Select(n => (int?)n.Id).LastOrDefault();
+        Width = X0 * 2 + (maxPos - minPos) * Spacing + NodeW + 10;
+        Height = Y0 + RowGap + NodeH + 54;
+    }
+
+    private static string Px(double v) => v.ToString("0.#", CultureInfo.InvariantCulture) + "px";
+
+    private static string LinkStyle(double x1, double y1, double x2, double y2)
+    {
+        double dx = x2 - x1, dy = y2 - y1;
+        double len = Math.Max(0, Math.Sqrt(dx * dx + dy * dy) - 6);
+        double angle = Math.Atan2(dy, dx) * 180 / Math.PI;
+        return $"--x:{Px(x1)};--y:{Px(y1 - 1)};--len:{Px(len)};--a:{angle.ToString("0.##", CultureInfo.InvariantCulture)}deg";
+    }
+}

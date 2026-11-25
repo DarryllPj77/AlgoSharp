@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The algorithm sources are also embedded so the UI can display the exact code that runs. -->
+    <EmbeddedResource Include="Algorithms\**\*.cs" />
+  </ItemGroup>
+
+</Project>

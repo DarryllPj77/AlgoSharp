@@ -1,0 +1,41 @@
+@using System.Globalization
+
+<div class="controls">
+    <div class="transport">
+        <button class="icon-btn" title="First step (Home)" aria-label="First step" disabled="@Player.AtStart" @onclick="Player.First"><Icon Name="first" /></button>
+        <button class="icon-btn" title="Step back (←)" aria-label="Step back" disabled="@Player.AtStart" @onclick="Player.Back"><Icon Name="prev" /></button>
+        <button class="play-btn" title="Play / pause (Space)" aria-label="@(Player.Playing ? "Pause" : "Play")" @onclick="Player.Toggle">
+            <Icon Name="@(Player.Playing ? "pause" : Player.AtEnd && Player.Steps.Count > 1 ? "reset" : "play")" />
+        </button>
+        <button class="icon-btn" title="Step forward (→)" aria-label="Step forward" disabled="@Player.AtEnd" @onclick="Player.Forward"><Icon Name="next" /></button>
+        <button class="icon-btn" title="Last step (End)" aria-label="Last step" disabled="@Player.AtEnd" @onclick="Player.Last"><Icon Name="last" /></button>
+    </div>
+
+    <div class="timeline">
+        <input class="range" type="range" min="0" max="@Math.Max(0, Player.Steps.Count - 1)" value="@Player.Index"
+               style="--p:@Percent" aria-label="Timeline" @oninput="OnScrub" />
+        <span class="count">@(Player.Steps.Count == 0 ? 0 : Player.Index + 1) / @Player.Steps.Count</span>
+    </div>
+
+    <div class="speed" role="group" aria-label="Speed">
+        @foreach (double s in Player.Speeds)
+        {
+            <button class="@(Player.Speed == s ? "on" : "")" @onclick="() => Player.SetSpeed(s)">@Label(s)</button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Player Player { get; set; } = default!;
+
+    private string Percent => Player.Steps.Count <= 1
+        ? "0%"
+        : (100.0 * Player.Index / (Player.Steps.Count - 1)).ToString("0.##", CultureInfo.InvariantCulture) + "%";
+
+    private static string Label(double s) => s switch { 0.25 => "¼×", 0.5 => "½×", _ => s.ToString(CultureInfo.InvariantCulture) + "×" };
+
+    private void OnScrub(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int i)) Player.Seek(i);
+    }
+}

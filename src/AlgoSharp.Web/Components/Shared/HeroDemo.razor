@@ -1,0 +1,70 @@
+@implements IDisposable
+@using AlgoSharp.Core.Algorithms
+
+@* A live bubble sort: real C# steps played back in a loop. *@
+<div class="demo cat-sorting">
+    <div class="demo-head">
+        <span class="pill">BubbleSort(int[] a)</span>
+        <span class="live">@(player.Index + 1) / @player.Steps.Count</span>
+    </div>
+    <div class="demo-stage stage" style="--dur:@(player.AnimationMs)ms;border:0;border-radius:0;background:none">
+        @if (player.Current?.Array is { } frame)
+        {
+            <ArrayCanvas Frame="frame" ShowIndices="false" />
+        }
+    </div>
+    <p class="demo-msg">@player.Current?.Message</p>
+    <div class="demo-code">
+        <CodeViewer Region="region" ActiveLine="@region.LineOf(player.Current?.Label ?? "")" />
+    </div>
+</div>
+
+@code {
+    private readonly Player player = new() { Speed = 2 };
+    private readonly CodeRegion region = CodeLibrary.Get("bubble-sort");
+    private readonly Random rng = new();
+    private CancellationTokenSource? restart;
+
+    protected override void OnInitialized()
+    {
+        player.Changed += OnChanged;
+        Shuffle(autoplay: false);
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) player.Play();
+    }
+
+    private void OnChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+        if (player.AtEnd && !player.Playing) _ = RestartLater();
+    }
+
+    private async Task RestartLater()
+    {
+        restart?.Cancel();
+        var cts = restart = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(2600, cts.Token);
+            await InvokeAsync(() => Shuffle(autoplay: true));
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    private void Shuffle(bool autoplay)
+    {
+        int[] values = Enumerable.Range(0, 9).Select(_ => rng.Next(8, 99)).ToArray();
+        var tracer = new ArrayTracer(ArrayLayout.Bars, values.Length, values);
+        Sorting.BubbleSort(values, tracer);
+        player.Load(tracer.Steps, autoplay);
+    }
+
+    public void Dispose()
+    {
+        restart?.Cancel();
+        player.Dispose();
+    }
+}

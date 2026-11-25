@@ -1,0 +1,69 @@
+@* Renders an ArrayFrame. Elements are keyed by identity, so CSS transitions animate
+   every move between consecutive snapshots (forwards or backwards). *@
+
+<div class="arr layout-@Frame.Layout.ToString().ToLowerInvariant()">
+    <div class="arr-track @(Frame.HasAux && Frame.Layout == ArrayLayout.Bars ? "aux" : "")" style="--n:@Frame.Capacity">
+        @if (Frame.Layout != ArrayLayout.Bars)
+        {
+            @for (int i = 0; i < Frame.Capacity; i++)
+            {
+                <div class="slot-bg" style="--pos:@i"></div>
+            }
+        }
+        else
+        {
+            <div class="band @(ShowBand ? "" : "hidden")" style="--lo:@Math.Max(0, Frame.RangeLo);--hi:@Math.Max(Frame.RangeLo, Frame.RangeHi)"></div>
+        }
+        @if (ShowIndices)
+        {
+            @for (int i = 0; i < Frame.Capacity; i++)
+            {
+                <div class="idx" style="--pos:@i">@i</div>
+            }
+            @if (Frame.HasAux && Frame.Layout == ArrayLayout.Bars)
+            {
+                <div class="aux-label">temp</div>
+            }
+        }
+        @foreach (var c in Frame.Cells)
+        {
+            <div @key="c.Id" class="cell s-@c.State.ToString().ToLowerInvariant()" style="--pos:@c.Pos;--row:@c.Row;--h:@Height(c)">
+                @if (Frame.Layout == ArrayLayout.Bars)
+                {
+                    <span class="val">@c.Value</span>
+                    <div class="bar"></div>
+                }
+                else
+                {
+                    <div class="box">@c.Value</div>
+                }
+            </div>
+        }
+        @foreach (var p in Frame.Pointers)
+        {
+            <div @key="@("p:" + p.Name)" class="ptr @PointerClass(p.Name) @(p.Stack > 0 ? "stacked" : "")" style="--pos:@p.Pos;--row:@p.Row;--stack:@p.Stack">
+                <span>@p.Name</span>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ArrayFrame Frame { get; set; } = default!;
+    [Parameter] public bool ShowIndices { get; set; } = true;
+
+    private bool ShowBand => Frame.RangeLo >= 0 && Frame.RangeHi >= Frame.RangeLo;
+
+    private string Height(CellView c) =>
+        (Math.Clamp(Math.Abs((double)c.Value) / Frame.MaxValue, 0, 1)).ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+
+    internal static string PointerClass(string name) => name switch
+    {
+        "head" => "p-head",
+        "i" or "lo" or "top" or "front" or "key" or "index" or "node" => "p-0",
+        "j" or "k" or "mid" or "cur" or "rear" => "p-1",
+        "j+1" or "hi" or "prev" or "p" or "k-1" => "p-2",
+        "end" or "removed" => "p-3",
+        _ => "p-4",
+    };
+}

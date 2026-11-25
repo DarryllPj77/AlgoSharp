@@ -1,0 +1,43 @@
+@if (Algorithm.Available)
+{
+    <a class="card cat-@Algorithm.Category.Key" href="/visualize/@Algorithm.Slug" style="--i:@Index">
+        @Content
+    </a>
+}
+else
+{
+    <div class="card soon cat-@Algorithm.Category.Key" style="--i:@Index" aria-disabled="true">
+        @Content
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public AlgorithmDef Algorithm { get; set; } = default!;
+    [Parameter] public int Index { get; set; }
+
+    private RenderFragment Content => @<text>
+        <div class="card-preview"><AlgoPreview Kind="@Algorithm.Preview" /></div>
+        <div class="card-body">
+            <span class="card-cat">@Algorithm.Category.Name</span>
+            <h3 class="card-title">@Algorithm.Name</h3>
+            <p class="card-text">@Algorithm.Tagline</p>
+            <div class="card-foot">
+                <span class="difficulty" title="@Algorithm.Difficulty">
+                    @for (int i = 0; i <= 2; i++)
+                    {
+                        <i class="@(i <= (int)Algorithm.Difficulty ? "on" : "")"></i>
+                    }
+                    @Algorithm.Difficulty
+                </span>
+                @if (Algorithm.Available)
+                {
+                    <span class="card-go">Visualize <Icon Name="arrow" /></span>
+                }
+                else
+                {
+                    <span class="badge">Phase @Algorithm.Phase · soon</span>
+                }
+            </div>
+        </div>
+    </text>;
+}

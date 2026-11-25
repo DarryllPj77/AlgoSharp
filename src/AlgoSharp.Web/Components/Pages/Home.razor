@@ -1,0 +1,140 @@
+@page "/"
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<PageTitle>AlgoSharp · Interactive C# Algorithm Visualizer</PageTitle>
+
+<div class="page">
+    <div class="container">
+        <section class="hero">
+            <div>
+                <span class="eyebrow"><span class="dot"></span>Real .NET code, step by step</span>
+                <h1>Watch C# <em>think</em>,<br />one step at a time.</h1>
+                <p class="hero-lede">
+                    AlgoSharp runs genuine C# implementations of classic data structures and algorithms,
+                    records every comparison, swap and pointer change, and lets you play it back —
+                    forwards, backwards, at your own pace — next to the exact line that's executing.
+                </p>
+                <div class="hero-actions">
+                    <a class="btn btn-primary" href="/visualize/bubble-sort"><Icon Name="play" /> Start with Bubble Sort</a>
+                    <a class="btn" href="#library">Browse the library</a>
+                </div>
+                <div class="hero-facts">
+                    <div><strong>@available</strong>interactive visualizers</div>
+                    <div><strong>.NET 10</strong>Blazor, no JS algorithms</div>
+                    <div><strong>⟲</strong>step backwards anytime</div>
+                </div>
+            </div>
+            <HeroDemo />
+        </section>
+    </div>
+
+    <section class="section" id="library">
+        <div class="container">
+            <div class="section-head">
+                <div>
+                    <h2>Algorithm library</h2>
+                    <p>Phase 1 foundations are fully interactive. Trees and graphs are next on the roadmap.</p>
+                </div>
+                <div class="search">
+                    <Icon Name="search" />
+                    <input @ref="searchInput" type="search" placeholder="Search algorithms…" aria-label="Search algorithms"
+                           value="@query" @oninput="e => query = e.Value?.ToString() ?? string.Empty" />
+                    <kbd>/</kbd>
+                </div>
+            </div>
+
+            <div class="chips" role="tablist" aria-label="Categories">
+                <button class="chip @(category is null ? "on" : "")" @onclick="() => category = null">
+                    All <span class="count">@AlgorithmCatalog.All.Count</span>
+                </button>
+                @foreach (var c in AlgorithmCatalog.Categories)
+                {
+                    int count = AlgorithmCatalog.All.Count(a => a.Category == c);
+                    if (count == 0) continue;
+                    <button class="chip cat-@c.Key @(category == c ? "on" : "")" @onclick="() => category = c" title="@c.Blurb">
+                        <span class="swatch"></span>@c.Name <span class="count">@count</span>
+                    </button>
+                }
+            </div>
+
+            @if (Filtered.Count == 0)
+            {
+                <p class="empty">Nothing matches “@query”. Try “sort”, “search” or “O(log n)”.</p>
+            }
+            else
+            {
+                <div class="grid" @key="@(category?.Key + "|" + query)">
+                    @for (int i = 0; i < Filtered.Count; i++)
+                    {
+                        <AlgoCard Algorithm="Filtered[i]" Index="i" @key="Filtered[i].Slug" />
+                    }
+                </div>
+            }
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <span>AlgoSharp — built with ASP.NET Core Blazor on .NET 10.</span>
+            <span>Inspired by the idea of learning by watching algorithms run.</span>
+        </div>
+    </footer>
+</div>
+
+@code {
+    private string query = "";
+    private Category? category;
+    private ElementReference searchInput;
+    private IJSObjectReference? module;
+    private IJSObjectReference? shortcuts;
+    private DotNetObjectReference<Home>? selfRef;
+    private readonly int available = AlgorithmCatalog.All.Count(a => a.Available);
+
+    private List<AlgorithmDef> Filtered => AlgorithmCatalog.All
+        .Where(a => category is null || a.Category == category)
+        .Where(a => Matches(a, query.Trim()))
+        .OrderBy(a => a.Available ? 0 : 1)
+        .ToList();
+
+    private static bool Matches(AlgorithmDef a, string q) =>
+        q.Length == 0
+        || a.Name.Contains(q, StringComparison.OrdinalIgnoreCase)
+        || a.Tagline.Contains(q, StringComparison.OrdinalIgnoreCase)
+        || a.Category.Name.Contains(q, StringComparison.OrdinalIgnoreCase)
+        || a.Operations.Any(o => o.Label.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || o.Complexity.Average.Contains(q, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            selfRef = DotNetObjectReference.Create(this);
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/app.js");
+            shortcuts = await module.InvokeAsync<IJSObjectReference>("registerShortcuts", selfRef);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    [JSInvokable]
+    public async Task OnShortcut(string action)
+    {
+        if (action == "search" && module is not null) await module.InvokeVoidAsync("focusElement", searchInput);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (shortcuts is not null)
+            {
+                await shortcuts.InvokeVoidAsync("dispose");
+                await shortcuts.DisposeAsync();
+            }
+            if (module is not null) await module.DisposeAsync();
+        }
+        catch (JSDisconnectedException) { }
+        selfRef?.Dispose();
+    }
+}

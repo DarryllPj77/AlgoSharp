@@ -1,0 +1,14 @@
+<div class="cx">
+    <div><small>Best</small><b>@Value.Best</b></div>
+    <div><small>Average</small><b>@Value.Average</b></div>
+    <div><small>Worst</small><b>@Value.Worst</b></div>
+    <div><small>Space</small><b>@Value.Space</b></div>
+</div>
+@if (!string.IsNullOrEmpty(Value.Note))
+{
+    <p class="cx-note">@Value.Note</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public Complexity Value { get; set; } = default!;
+}

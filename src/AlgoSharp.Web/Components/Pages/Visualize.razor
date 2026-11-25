@@ -1,0 +1,385 @@
+@page "/visualize/{Slug}"
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+@if (def is null)
+{
+    <PageTitle>Not found · AlgoSharp</PageTitle>
+    <div class="page container empty">
+        <h1 style="font-size:32px;margin-bottom:10px">Unknown visualizer</h1>
+        <p>We couldn't find “@Slug”. <a href="/" style="color:var(--brand)">Browse the library</a>.</p>
+    </div>
+}
+else if (!def.Available)
+{
+    <PageTitle>@def.Name · AlgoSharp</PageTitle>
+    <div class="page container cat-@def.Category.Key" style="padding:80px 24px;max-width:640px">
+        <span class="pill">Phase @def.Phase · on the roadmap</span>
+        <h1 style="font-size:36px;margin:16px 0 10px">@def.Name</h1>
+        <p style="color:var(--text-2);font-size:16px">@def.Tagline It's planned for a later phase; the Phase 1 visualizers are fully interactive today.</p>
+        <div class="hero-actions"><a class="btn btn-primary" href="/"><Icon Name="back" /> Back to the library</a></div>
+    </div>
+}
+else
+{
+    <PageTitle>@def.Name · AlgoSharp</PageTitle>
+    <div class="page cat-@def.Category.Key">
+        <div class="viz-header">
+            <div class="viz-header-inner">
+                <div>
+                    <div class="crumbs"><a href="/">Library</a><span>/</span><span>@def.Category.Name</span></div>
+                    <div class="viz-title">
+                        <h1>@def.Name</h1>
+                        <span class="pill">@def.Difficulty</span>
+                    </div>
+                </div>
+                <div class="viz-header-right">
+                    <span class="shortcuts"><span><kbd>Space</kbd> play</span><span><kbd>←</kbd><kbd>→</kbd> step</span><span><kbd>R</kbd> run again</span></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="workspace tab-@mobileTab">
+            <!-- ============ center: stage ============ -->
+            <section class="panel-center">
+                <div class="stage" style="--dur:@(player.AnimationMs)ms">
+                    <StateLegend Kind="@def.Slug" />
+                    @if (Current?.Array is { } arr)
+                    {
+                        <ArrayCanvas Frame="arr" />
+                    }
+                    else if (Current?.List is { } list)
+                    {
+                        <ListCanvas Frame="list" />
+                    }
+                </div>
+
+                <div class="message @(Current?.IsError == true ? "error" : player.AtEnd && player.Steps.Count > 1 ? "done" : "")" aria-live="polite">
+                    <span class="step-no">@(player.Steps.Count > 1 ? $"step {player.Index + 1}" : "ready")</span>
+                    <p @key="player.Index + Current?.Message">@Current?.Message</p>
+                </div>
+
+                <PlaybackControls Player="player" />
+            </section>
+
+            <div class="mobile-tabs" role="tablist">
+                <button class="@(mobileTab == "setup" ? "on" : "")" @onclick='() => mobileTab = "setup"'>Setup &amp; learn</button>
+                <button class="@(mobileTab == "code" ? "on" : "")" @onclick='() => mobileTab = "code"'>C# code</button>
+            </div>
+
+            <!-- ============ left: explanation + input ============ -->
+            <aside class="panel-left">
+                <div class="box-card">
+                    <header><Icon Name="bolt" /> Operation</header>
+                    <div class="body">
+                        @if (def.Operations.Count > 1)
+                        {
+                            <div class="ops" role="tablist">
+                                @foreach (var o in def.Operations)
+                                {
+                                    <button class="op @(o == op ? "on" : "")" @onclick="() => SelectOperation(o)">@o.Label</button>
+                                }
+                            </div>
+                        }
+                        <p class="op-summary">@op.Summary</p>
+
+                        @if (op.Params.Count > 0)
+                        {
+                            <div class="field-row">
+                                @foreach (var p in op.Params)
+                                {
+                                    <div class="field">
+                                        <label for="param-@p.Name">@p.Label</label>
+                                        <input id="param-@p.Name" type="number" inputmode="numeric" value="@paramText[p.Name]"
+                                               @onchange="e => paramText[p.Name] = e.Value?.ToString() ?? string.Empty"
+                                               @onkeydown="OnParamKey" />
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <button class="btn btn-accent run-btn" @onclick="RunOperation">
+                            <Icon Name="play" /> Run @op.Label
+                        </button>
+
+                        @if (lastResult is not null)
+                        {
+                            <div class="result-toast @(lastResult.Failed ? "fail" : "")">@lastResult.Summary</div>
+                        }
+                    </div>
+                </div>
+
+                <div class="box-card">
+                    <header><Icon Name="vars" /> Data <span class="muted">@Values.Length / @def.Input.MaxCount values</span></header>
+                    <div class="body">
+                        <div class="field" style="margin-top:0">
+                            <label for="data-input">Values (comma separated)</label>
+                            <input id="data-input" class="@(dataError is null ? "" : "invalid")" value="@dataText"
+                                   @onchange="e => dataText = e.Value?.ToString() ?? string.Empty"
+                                   @onkeydown="OnDataKey" />
+                            @if (dataError is not null)
+                            {
+                                <span class="field-error">@dataError</span>
+                            }
+                            else
+                            {
+                                <span class="field-hint">@def.Input.MinValue–@def.Input.MaxValue, up to @def.Input.MaxCount values@(def.Input.SortedRequired ? " · sorted automatically" : "")</span>
+                            }
+                        </div>
+                        <div class="actions-row">
+                            <button class="btn btn-sm" @onclick="ApplyData">Apply</button>
+                            <button class="btn btn-sm" @onclick="RandomData"><Icon Name="shuffle" /> Random</button>
+                            <button class="btn btn-sm btn-ghost" @onclick="ResetData"><Icon Name="reset" /> Default</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="box-card about">
+                    <header><Icon Name="info" /> How it works</header>
+                    <div class="body">
+                        <p>@def.Description</p>
+                        <ul class="ideas">
+                            @foreach (var idea in def.KeyIdeas)
+                            {
+                                <li>@idea</li>
+                            }
+                        </ul>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- ============ right: code, variables, complexity ============ -->
+            <aside class="panel-right">
+                <div class="box-card">
+                    <header><Icon Name="code" /> C# implementation <span class="muted">line @(ActiveLine == 0 ? "–" : ActiveLine.ToString())</span></header>
+                    <CodeViewer Region="Region" ActiveLine="ActiveLine" />
+                    <p class="code-note" style="padding-bottom:10px;border-radius:0 0 var(--r-lg) var(--r-lg)">This is the exact code that ran, from <code>AlgoSharp.Core</code>. Step-recording calls are hidden.</p>
+                </div>
+
+                <div class="box-card">
+                    <header><Icon Name="vars" /> Variables</header>
+                    <div class="body">
+                        <VariableInspector Vars="@(Current?.Vars ?? [])" Previous="@player.Previous?.Vars" />
+                    </div>
+                </div>
+
+                <div class="box-card">
+                    <header><Icon Name="clock" /> Complexity · @op.Label</header>
+                    <div class="body">
+                        <ComplexityPanel Value="op.Complexity" />
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Slug { get; set; } = "";
+
+    private readonly Player player = new();
+    private AlgorithmDef? def;
+    private OperationDef op = default!;
+    private IVisualizerSession session = default!;
+    private readonly Dictionary<string, string> paramText = [];
+    private string dataText = "";
+    private string? dataError;
+    private OperationResult? lastResult;
+    private string mobileTab = "setup";
+    private string? loadedSlug;
+    private readonly Random rng = new();
+
+    private DotNetObjectReference<Visualize>? selfRef;
+    private IJSObjectReference? module;
+    private IJSObjectReference? shortcuts;
+
+    private Step? Current => player.Current;
+    private int[] Values => session?.Values ?? [];
+    private CodeRegion Region => CodeLibrary.Get(op.CodeId);
+    private int ActiveLine => Current is null ? 0 : Region.LineOf(Current.Label);
+
+    protected override void OnInitialized()
+    {
+        player.Changed += () => _ = InvokeAsync(StateHasChanged);
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (loadedSlug == Slug) return;
+        loadedSlug = Slug;
+        def = AlgorithmCatalog.Find(Slug);
+        lastResult = null;
+        dataError = null;
+        mobileTab = "setup";
+        if (def is not { Available: true }) return;
+        LoadData(def.Input.Default);
+        SelectOperation(def.Operations[0]);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            selfRef = DotNetObjectReference.Create(this);
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/app.js");
+            shortcuts = await module.InvokeAsync<IJSObjectReference>("registerShortcuts", selfRef);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    [JSInvokable]
+    public Task OnShortcut(string action) => InvokeAsync(() =>
+    {
+        if (def is not { Available: true }) return;
+        switch (action)
+        {
+            case "toggle":
+                if (player.Steps.Count <= 1) RunOperation(); else player.Toggle();
+                break;
+            case "next": player.Forward(); break;
+            case "prev": player.Back(); break;
+            case "first": player.First(); break;
+            case "last": player.Last(); break;
+            case "reset": RunOperation(); break;
+        }
+    });
+
+    private bool IsStatic => def!.Operations.Count == 1;
+
+    private void SelectOperation(OperationDef o)
+    {
+        op = o;
+        paramText.Clear();
+        foreach (var p in o.Params) paramText[p.Name] = p.Default.ToString();
+        lastResult = null;
+        ShowIdle();
+    }
+
+    /// <summary>Sorting/searching pages pre-compute steps so Play works immediately; structures wait for Run.</summary>
+    private void ShowIdle()
+    {
+        if (IsStatic)
+        {
+            var result = session.Run(op.Key, Args());
+            player.Load([session.Snapshot($"Ready: {Describe()} Press play or Space to start."), .. result.Steps], autoplay: false);
+        }
+        else
+        {
+            player.Load([session.Snapshot($"Pick an operation, set its inputs, then press “Run {op.Label}”.")], autoplay: false);
+        }
+    }
+
+    private string Describe() => def!.Category == AlgorithmCatalog.Sorting
+        ? $"{Values.Length} values to sort."
+        : $"searching {Values.Length} values for {paramText.GetValueOrDefault("target")}.";
+
+    private Dictionary<string, int> Args()
+    {
+        var args = new Dictionary<string, int>();
+        foreach (var p in op.Params)
+        {
+            args[p.Name] = int.TryParse(paramText.GetValueOrDefault(p.Name), out int v) ? Math.Clamp(v, p.Min, p.Max) : p.Default;
+            paramText[p.Name] = args[p.Name].ToString();
+        }
+        return args;
+    }
+
+    private void RunOperation()
+    {
+        if (def is not { Available: true }) return;
+        var args = Args();
+        string call = $"{op.Label}({string.Join(", ", args.Select(a => $"{a.Key}: {a.Value}"))})";
+        var before = session.Snapshot($"Run {call} on [{string.Join(", ", Values)}].");
+        var result = session.Run(op.Key, args);
+        lastResult = result;
+        dataText = string.Join(", ", Values);
+        dataError = null;
+        player.Load([before, .. result.Steps], autoplay: true);
+    }
+
+    private async Task OnParamKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await Task.Yield();
+            RunOperation();
+        }
+    }
+
+    private async Task OnDataKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await Task.Yield();
+            ApplyData();
+        }
+    }
+
+    private void ApplyData()
+    {
+        var spec = def!.Input;
+        var parts = dataText.Split([',', ' ', ';', '\t'], StringSplitOptions.RemoveEmptyEntries);
+        var values = new List<int>();
+        foreach (var part in parts)
+        {
+            if (!int.TryParse(part, out int v)) { dataError = $"“{part}” is not a whole number."; return; }
+            if (v < spec.MinValue || v > spec.MaxValue) { dataError = $"{v} is outside {spec.MinValue}–{spec.MaxValue}."; return; }
+            values.Add(v);
+        }
+        if (values.Count < spec.MinCount) { dataError = $"Enter at least {spec.MinCount} value(s)."; return; }
+        if (values.Count > spec.MaxCount) { dataError = $"At most {spec.MaxCount} values, please."; return; }
+        dataError = null;
+        LoadData(values.ToArray());
+        ShowIdle();
+    }
+
+    private void RandomData()
+    {
+        var spec = def!.Input;
+        int count = spec.Default.Length == 0
+            ? rng.Next(2, Math.Max(3, spec.MaxCount / 2))
+            : Math.Clamp(spec.Default.Length + rng.Next(-2, 3), Math.Max(spec.MinCount, 1), spec.MaxCount);
+        if (def.Category == AlgorithmCatalog.Sorting) count = rng.Next(8, 13);
+        var values = Enumerable.Range(0, count).Select(_ => rng.Next(Math.Max(spec.MinValue, 1), Math.Min(spec.MaxValue, 99) + 1)).ToArray();
+        LoadData(values);
+        if (op.Params.Any(p => p.Name == "target") && values.Length > 0 && rng.Next(4) > 0)
+        {
+            paramText["target"] = Values[rng.Next(Values.Length)].ToString();
+        }
+        lastResult = null;
+        ShowIdle();
+    }
+
+    private void ResetData()
+    {
+        LoadData(def!.Input.Default);
+        foreach (var p in op.Params) paramText[p.Name] = p.Default.ToString();
+        lastResult = null;
+        dataError = null;
+        ShowIdle();
+    }
+
+    private void LoadData(int[] values)
+    {
+        if (def!.Input.SortedRequired) values = values.Order().ToArray();
+        session = def.CreateSession!(values);
+        dataText = string.Join(", ", values);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        player.Dispose();
+        try
+        {
+            if (shortcuts is not null)
+            {
+                await shortcuts.InvokeVoidAsync("dispose");
+                await shortcuts.DisposeAsync();
+            }
+            if (module is not null) await module.DisposeAsync();
+        }
+        catch (JSDisconnectedException) { }
+        selfRef?.Dispose();
+    }
+}
