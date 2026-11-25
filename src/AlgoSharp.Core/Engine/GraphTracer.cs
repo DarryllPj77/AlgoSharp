@@ -7,13 +7,13 @@ namespace AlgoSharp.Core.Engine;
 /// </summary>
 public sealed class SceneBuilder
 {
-    internal readonly List<(object Key, string Label, double X, double Y, NodeShape Shape)> Nodes = [];
+    internal readonly List<(object Key, string Label, double X, double Y, NodeShape Shape, string? Badge)> Nodes = [];
     internal readonly List<(object Key, object From, object To, string? Label, bool Directed)> Edges = [];
 
     public double Height { get; set; } = 50;
 
-    public void Node(object key, string label, double x, double y, NodeShape shape = NodeShape.Circle) =>
-        Nodes.Add((key, label, x, y, shape));
+    public void Node(object key, string label, double x, double y, NodeShape shape = NodeShape.Circle, string? badge = null) =>
+        Nodes.Add((key, label, x, y, shape, badge));
 
     public void Edge(object key, object from, object to, string? label = null, bool directed = false) =>
         Edges.Add((key, from, to, label, directed));
@@ -34,7 +34,26 @@ public sealed class GraphTracer
     private readonly Dictionary<object, CellState> nodeMarks = [];
     private readonly Dictionary<object, CellState> edgeMarks = [];
     private readonly Dictionary<object, string> badges = [];
+    private readonly Dictionary<object, string> edgeLabels = [];
+    private readonly HashSet<object> revealed = [];
     private int next;
+
+    /// <summary>When true, only nodes passed to <see cref="Reveal"/> are drawn (e.g. while a tree is being built).</summary>
+    public bool HideUnrevealed { get; set; }
+
+    public void Reveal(object node) => revealed.Add(node);
+
+    public void RevealAll()
+    {
+        HideUnrevealed = false;
+        revealed.Clear();
+    }
+
+    /// <summary>Overrides an edge's label (e.g. "flow/capacity").</summary>
+    public void EdgeLabel(object edge, string? text)
+    {
+        if (text is null) edgeLabels.Remove(edge); else edgeLabels[edge] = text;
+    }
 
     public GraphTracer(Action<SceneBuilder> scene) => this.scene = scene;
 
@@ -71,11 +90,18 @@ public sealed class GraphTracer
         for (int i = 0; i < count; i++) Badge(i, text(i));
     }
 
+    /// <summary>Applies a tracer action to many items (keeps instrumentation on one hidden line).</summary>
+    public void ForEach<TItem>(IEnumerable<TItem> items, Action<TItem> action)
+    {
+        foreach (var item in items.ToList()) action(item);
+    }
+
     public void ClearMarks()
     {
         nodeMarks.Clear();
         edgeMarks.Clear();
         badges.Clear();
+        edgeLabels.Clear();
     }
 
     public GraphStepBuilder At(string label) => new(this, label);
@@ -99,16 +125,17 @@ public sealed class GraphTracer
         var sb = new SceneBuilder();
         scene(sb);
 
-        var nodes = sb.Nodes.Select(n => new GNode(
+        var visible = HideUnrevealed ? sb.Nodes.Where(n => revealed.Contains(n.Key)).ToList() : sb.Nodes;
+        var nodes = visible.Select(n => new GNode(
             NodeId(n.Key), n.Label, n.X, n.Y, n.Shape,
             b.NodeHighlight(n.Key) ?? (nodeMarks.TryGetValue(n.Key, out var m) ? m : CellState.Default),
-            badges.GetValueOrDefault(n.Key))).ToList();
+            badges.GetValueOrDefault(n.Key) ?? n.Badge)).ToList();
 
-        var present = sb.Nodes.Select(n => n.Key).ToHashSet();
+        var present = visible.Select(n => n.Key).ToHashSet();
         var edges = sb.Edges
             .Where(e => present.Contains(e.From) && present.Contains(e.To))
             .Select(e => new GEdge(
-                EdgeId(e.Key), NodeId(e.From), NodeId(e.To), e.Label,
+                EdgeId(e.Key), NodeId(e.From), NodeId(e.To), edgeLabels.GetValueOrDefault(e.Key) ?? e.Label,
                 b.EdgeHighlight(e.Key) ?? (edgeMarks.TryGetValue(e.Key, out var m) ? m : CellState.Default),
                 e.Directed)).ToList();
 
@@ -152,6 +179,12 @@ public sealed class GraphStepBuilder
     public GraphStepBuilder HlEdge(CellState state, object? edge)
     {
         if (edge is not null) edges.Add((state, edge));
+        return this;
+    }
+
+    public GraphStepBuilder HlEdges(CellState state, IEnumerable<object> edges)
+    {
+        foreach (var e in edges) HlEdge(state, e);
         return this;
     }
 

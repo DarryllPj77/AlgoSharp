@@ -21,7 +21,19 @@ public static class AlgorithmCatalog
     private static readonly ParamDef Target = new("target", "Target", 42, -99, 999);
     private static readonly ParamDef Start = new("start", "Start vertex", 0, 0, Graph.MaxVertices - 1, ParamKind.Vertex);
 
-    private static readonly InputSpec GraphInput = new(0, 0, 0, 0, []) { Kind = InputKind.Graph, DefaultText = Graph.DefaultText };
+    private static readonly InputSpec GraphInput = new(0, 0, 0, 0, [])
+    {
+        Kind = InputKind.Text,
+        DefaultText = Graph.DefaultText,
+        TextHint = "Undirected, vertices A–H, weights 1–99. Vertex positions are fixed so you can compare runs.",
+    };
+
+    private static InputSpec DirectedInput(string text, string label, string hint) =>
+        new(0, 0, 0, 0, []) { Kind = InputKind.Text, DefaultText = text, TextLabel = label, TextHint = hint };
+
+    private static readonly string[] WordPool = ["car", "cart", "care", "cat", "cast", "dog", "do", "dot", "tea", "ten", "tent", "to", "in", "inn"];
+
+    private static string RandomWords(Random rng) => string.Join(", ", WordPool.OrderBy(_ => rng.Next()).Take(rng.Next(4, 8)));
 
     private static OperationDef Sort(string codeId, string summary, Complexity c) =>
         new("sort", "Sort", codeId, summary, c, []);
@@ -179,14 +191,14 @@ public static class AlgorithmCatalog
                 new("dfs", "DFS", "dfs", "Depth-first search from a start vertex.", new("O(V + E)", "O(V + E)", "O(V + E)", "O(V)", "Space is the recursion depth."), [Start]),
                 new("neighbors", "Adjacency", "graph-neighbors", "List a vertex's neighbours from its adjacency list.", new("O(deg)", "O(deg)", "O(deg)", "O(deg)", "Only the vertex's own list is scanned."), [Start]),
             ],
-            GraphInput, "graph", null, Phase: 2) { CreateFromText = t => new GraphSession(Graph.Parse(t)) },
+            GraphInput, "graph", null, Phase: 2) { CreateFromText = t => new GraphSession(Graph.Parse(t)), RandomText = r => Graph.Random(r).ToText() },
 
         new("dijkstra", "Dijkstra's Algorithm", Graphs, Difficulty.Advanced,
             "Shortest paths from one source with a priority queue.",
             "Dijkstra's algorithm finds the cheapest path from a source to every vertex when all edge weights are non-negative. It repeatedly settles the closest unsettled vertex (taken from a min-priority queue) and relaxes its edges: if going through it is cheaper, the neighbour's distance is lowered. Numbers under each vertex are the current best distances.",
             ["Requires non-negative weights.", "Once a vertex is dequeued, its distance is final.", "Stale queue entries are skipped instead of decreased.", "Green edges form the shortest-path tree."],
             [new("dijkstra", "Dijkstra", "dijkstra", "Compute shortest distances from the source.", new("O((V+E) log V)", "O((V+E) log V)", "O((V+E) log V)", "O(V + E)", "Using .NET's binary-heap PriorityQueue."), [Start with { Label = "Source" }])],
-            GraphInput, "graph", null, Phase: 2) { CreateFromText = t => new GraphSession(Graph.Parse(t)) },
+            GraphInput, "graph", null, Phase: 2) { CreateFromText = t => new GraphSession(Graph.Parse(t)), RandomText = r => Graph.Random(r).ToText() },
 
         new("mst", "Minimum Spanning Tree", Graphs, Difficulty.Advanced,
             "Kruskal and Prim connect every vertex as cheaply as possible.",
@@ -196,7 +208,7 @@ public static class AlgorithmCatalog
                 new("kruskal", "Kruskal", "kruskal", "Add edges lightest-first, skipping cycles.", new("O(E log E)", "O(E log E)", "O(E log E)", "O(V)", "Dominated by sorting the edges."), []),
                 new("prim", "Prim", "prim", "Grow the tree from a start vertex.", new("O(E log V)", "O(E log V)", "O(E log V)", "O(E)", "Lazy version: the queue may hold stale edges."), [Start]),
             ],
-            GraphInput, "graph", null, Phase: 2) { CreateFromText = t => new GraphSession(Graph.Parse(t)) },
+            GraphInput, "graph", null, Phase: 2) { CreateFromText = t => new GraphSession(Graph.Parse(t)), RandomText = r => Graph.Random(r).ToText() },
 
         new("recursion-tree", "Recursion Tree", Advanced, Difficulty.Intermediate,
             "Watch every call a recursive function makes.",
@@ -209,10 +221,69 @@ public static class AlgorithmCatalog
             ],
             new(0, 0, 0, 0, []) { Kind = InputKind.None },
             "tree", _ => new RecursionSession(), Phase: 2),
-        Soon("segment-tree", "Segment Tree", Trees, Difficulty.Advanced, "Range queries and updates in O(log n).", "tree", 3),
-        Soon("union-find", "Union-Find", Advanced, Difficulty.Advanced, "Disjoint sets with path compression.", "graph", 3),
-        Soon("dynamic-programming", "Dynamic Programming", Advanced, Difficulty.Advanced, "Fill a table of overlapping subproblems.", "hash", 3),
-        Soon("trie", "Trie", Trees, Difficulty.Intermediate, "Prefix tree for fast string lookup.", "tree", 3),
+        new("segment-tree", "Segment Tree", Trees, Difficulty.Advanced,
+            "Range sums and point updates in O(log n).",
+            "A segment tree stores, for every node, the answer for a range of the array: the root covers everything and each child covers one half of its parent. A range query combines just the few nodes that exactly cover the range, and a point update only recomputes the nodes on one root-to-leaf path. The tree lives in an array, like a heap: node i has children 2i and 2i + 1.",
+            ["Each node stores the sum of its range [lo..hi].", "Query: fully inside → use it; no overlap → 0; partial → ask both children.", "Update: change a leaf, then fix its ancestors.", "Both are O(log n); building is O(n)."],
+            [
+                new("query", "Range sum", "seg-query", "Sum of data[l..r].", new("O(1)", "O(log n)", "O(log n)", "O(log n)", "At most ~4 nodes per level are visited. Space is the recursion depth."), [new("l", "l", 2, 0, 7), new("r", "r", 5, 0, 7)]),
+                new("update", "Update", "seg-update", "Set data[index] = value.", new("O(log n)", "O(log n)", "O(log n)", "O(log n)", "One root-to-leaf path is recomputed."), [Index with { Default = 3, Max = 7 }, Value with { Default = 10 }]),
+                new("build", "Build", "seg-build", "Build the tree bottom-up from the array.", new("O(n)", "O(n)", "O(n)", "O(n)", "About 2n nodes, each computed once."), []),
+            ],
+            new(1, 8, -99, 99, [5, 8, 6, 3, 2, 7, 2, 6]),
+            "tree", v => new SegmentTreeSession(v), Phase: 3),
+
+        new("union-find", "Union-Find", Advanced, Difficulty.Advanced,
+            "Disjoint sets with union by rank and path compression.",
+            "Union-Find (a disjoint-set union) keeps track of which items belong to the same group. Each set is a tree whose root is the set's representative; Find climbs to the root, and Union hangs one root under the other. Two tricks make it nearly O(1): union by rank keeps trees shallow, and path compression re-points every visited node straight at the root. Kruskal's MST uses exactly this.",
+            ["Every item starts as its own set (parent[x] = x).", "Find(x) follows parent links to the root.", "Union links the shorter tree under the taller one.", "With both tricks, operations cost O(α(n)) — effectively constant."],
+            [
+                new("union", "Union", "union-find", "Merge the sets containing a and b.", new("O(1)", "O(α(n))", "O(log n)", "O(log n)", "Worst case shown is without compression; α(n) ≤ 4 in practice."), [new("a", "a", 4, 0, 9), new("b", "b", 3, 0, 9)]),
+                new("find", "Find", "union-find", "Return the root of x's set.", new("O(1)", "O(α(n))", "O(log n)", "O(log n)", "Path compression flattens the tree as it goes."), [new("a", "x", 3, 0, 9)]),
+                new("connected", "Connected?", "union-find", "Are a and b in the same set?", new("O(1)", "O(α(n))", "O(log n)", "O(log n)", "Two Finds and a comparison."), [new("a", "a", 0, 0, 9), new("b", "b", 6, 0, 9)]),
+            ],
+            new(0, 0, 0, 0, []) { Kind = InputKind.None },
+            "graph", _ => new UnionFindSession(), Phase: 3),
+
+        new("dynamic-programming", "Dynamic Programming", Advanced, Difficulty.Advanced,
+            "Fill a table of overlapping subproblems.",
+            "Dynamic programming solves a problem by answering smaller versions of it first and storing each answer in a table, so nothing is computed twice. Every cell is filled from cells that are already known. Compare the Fibonacci table here with the exponential recursion tree on the Recursion page.",
+            ["Define what one cell means (the subproblem).", "Write the recurrence: how a cell follows from earlier cells.", "Fill the table in an order where inputs are always ready.", "Walk back through the table to recover the actual solution."],
+            [
+                new("lcs", "LCS", "lcs", "Longest common subsequence of two strings.", new("O(m·n)", "O(m·n)", "O(m·n)", "O(m·n)", "One O(1) step per table cell."), [new("a", "String a", 0, Kind: ParamKind.Text) { DefaultText = "ABCBDAB" }, new("b", "String b", 0, Kind: ParamKind.Text) { DefaultText = "BDCABA" }]),
+                new("coins", "Coin change", "coin-change", "Fewest coins that make an amount.", new("O(A·k)", "O(A·k)", "O(A·k)", "O(A)", "A = amount, k = number of coin values."), [new("coins", "Coins", 0, Kind: ParamKind.Text) { DefaultText = "1, 3, 4" }, new("amount", "Amount (1–20)", 6, 1, 20)]),
+                new("fib", "Fibonacci", "fib-table", "Fibonacci, bottom-up.", new("O(n)", "O(n)", "O(n)", "O(n)", "Keeping only the last two values would make it O(1) space."), [new("n", "n (1–15)", 10, 1, 15)]),
+            ],
+            new(0, 0, 0, 0, []) { Kind = InputKind.None },
+            "table", _ => new DpSession(), Phase: 3),
+
+        new("trie", "Trie", Trees, Difficulty.Intermediate,
+            "A prefix tree for fast word and prefix lookup.",
+            "A trie stores words letter by letter along paths from the root, so words with a common prefix share nodes. Looking up a word or a prefix takes time proportional to its length, no matter how many words are stored. Tries power autocomplete and spell checkers. Labels under nodes mark where a whole word ends.",
+            ["Each edge is one letter; a path from the root spells a prefix.", "Shared prefixes are stored only once.", "Lookup is O(length), independent of the word count.", "An end-of-word flag separates \"car\" from the prefix of \"cart\"."],
+            [
+                new("insert", "Insert", "trie-insert", "Add a word.", new("O(L)", "O(L)", "O(L)", "O(L)", "L = word length; at most L new nodes."), [new("word", "Word", 0, Kind: ParamKind.Text) { DefaultText = "cast" }]),
+                new("search", "Search", "trie-search", "Is this exact word stored?", new("O(L)", "O(L)", "O(L)", "O(1)", ""), [new("word", "Word", 0, Kind: ParamKind.Text) { DefaultText = "car" }]),
+                new("prefix", "Starts with", "trie-search", "Does any word start with this prefix?", new("O(L)", "O(L)", "O(L)", "O(1)", ""), [new("word", "Prefix", 0, Kind: ParamKind.Text) { DefaultText = "ca" }]),
+            ],
+            new(0, 0, 0, 0, []) { Kind = InputKind.Text, DefaultText = "car, cart, care, cat, dog, do", TextLabel = "Words", TextHint = "Up to 12 lowercase words, 8 letters max." },
+            "tree", null, Phase: 3) { CreateFromText = TrieSession.Parse, RandomText = RandomWords },
+
+        new("network-flow", "Network Flow", Graphs, Difficulty.Advanced,
+            "Maximum flow with Edmonds–Karp.",
+            "A flow network is a directed graph where each edge has a capacity, like pipes. The maximum-flow problem asks how much can travel from a source to a sink at once. Edmonds–Karp repeatedly finds the shortest path that still has spare capacity (BFS on the residual graph) and pushes the bottleneck amount along it. Reverse residual edges let it undo earlier choices.",
+            ["Edge labels show flow / capacity.", "Residual capacity = capacity − flow, plus reverse edges for undoing flow.", "Each round pushes the path's bottleneck.", "Max flow = min cut: the saturated edges (red) separate source from sink."],
+            [new("maxflow", "Max flow", "max-flow", "Compute the maximum flow from source to sink.", new("O(V·E²)", "O(V·E²)", "O(V·E²)", "O(V²)", "Capacity matrix; at most O(V·E) BFS rounds."), [Start with { Label = "Source" }, Start with { Name = "sink", Label = "Sink", Default = 6 }])],
+            DirectedInput(Graph.FlowText, "Edges (A->B:capacity)", "Directed edges A->B:capacity. Edges point left to right in random graphs."), "graph", null, Phase: 3)
+            { CreateFromText = t => new GraphSession(Graph.Parse(t, directed: true)), RandomText = r => Graph.Random(r, directed: true).ToText() },
+
+        new("topological-sort", "Topological Sort", Graphs, Difficulty.Intermediate,
+            "Order tasks so every prerequisite comes first.",
+            "A topological order lists the vertices of a directed acyclic graph (DAG) so that every edge points forward — like scheduling courses after their prerequisites. Kahn's algorithm repeatedly outputs a vertex with no remaining incoming edges and removes its outgoing edges. If vertices are left over, the graph has a cycle.",
+            ["Only DAGs have a topological order.", "In-degree = number of unfinished prerequisites (shown under each vertex).", "Kahn's algorithm uses a queue of in-degree-0 vertices.", "Leftover vertices mean there's a cycle."],
+            [new("topo", "Kahn's algorithm", "topo-sort", "Compute a topological order.", new("O(V + E)", "O(V + E)", "O(V + E)", "O(V)", "Each vertex and edge is handled once."), [])],
+            DirectedInput(Graph.DagText, "Edges (A->B)", "Directed edges like A->B. Random graphs point left to right, so they're always acyclic."), "graph", null, Phase: 3)
+            { CreateFromText = t => new GraphSession(Graph.Parse(t, directed: true, showWeights: false)), RandomText = r => Graph.Random(r, directed: true, showWeights: false).ToText() },
     ];
 
     public static AlgorithmDef? Find(string slug) =>

@@ -33,6 +33,49 @@ public static class TreeLayout
         sb.Height = Math.Max(30, Top + maxDepth * LevelGap + 12);
     }
 
+    /// <summary>
+    /// Tidy n-ary (forest) layout: leaves get consecutive slots, parents sit centred over
+    /// their children. <paramref name="edgesUp"/> draws child → parent arrows (union–find).
+    /// </summary>
+    public static void Nary<TNode>(
+        SceneBuilder sb, IEnumerable<TNode> roots, Func<TNode, IEnumerable<TNode>> children,
+        Func<TNode, string> label, Func<TNode, string?>? badge = null,
+        NodeShape shape = NodeShape.Circle, bool directed = false, bool edgesUp = false, double levelGap = 12)
+        where TNode : notnull
+    {
+        int leaves = 0;
+        var placed = new List<(TNode Node, TNode? Parent, bool HasParent, double Slot, int Depth)>();
+        double Place(TNode n, TNode? parent, bool hasParent, int depth)
+        {
+            var kids = children(n).ToList();
+            double slot;
+            if (kids.Count == 0 || depth > 12) slot = leaves++;
+            else
+            {
+                var xs = kids.Select(k => Place(k, n, true, depth + 1)).ToList();
+                slot = (xs[0] + xs[^1]) / 2;
+            }
+            placed.Add((n, parent, hasParent, slot, depth));
+            return slot;
+        }
+        foreach (var r in roots) Place(r, default, false, 0);
+
+        double spacing = leaves == 0 ? 0 : Math.Min(MaxSpacing + 2, (Width - 2 * Margin) / leaves);
+        double start = (Width - spacing * leaves) / 2;
+        int maxDepth = 0;
+        foreach (var (n, parent, hasParent, slot, depth) in placed)
+        {
+            maxDepth = Math.Max(maxDepth, depth);
+            sb.Node(n, label(n), start + (slot + 0.5) * spacing, Top - 1 + depth * levelGap, shape, badge?.Invoke(n));
+            if (hasParent && parent is not null)
+            {
+                if (edgesUp) sb.Edge(n, n, parent, directed: directed);
+                else sb.Edge(n, parent, n, directed: directed);
+            }
+        }
+        sb.Height = Math.Max(28, Top - 1 + maxDepth * levelGap + 13);
+    }
+
     /// <summary>Complete binary tree stored in an array (heaps): node i has children 2i+1 and 2i+2.</summary>
     public static GraphFrame HeapTree(ArrayFrame array)
     {
@@ -142,33 +185,6 @@ public sealed class CallTreeTracer
         }
     }
 
-    private void Layout(SceneBuilder sb)
-    {
-        int leaves = 0;
-        var placed = new List<(Call Call, double Slot, int Depth)>();
-        double Place(Call c, int depth)
-        {
-            double slot;
-            if (c.Children.Count == 0) slot = leaves++;
-            else
-            {
-                var xs = c.Children.Select(ch => Place(ch, depth + 1)).ToList();
-                slot = (xs[0] + xs[^1]) / 2;
-            }
-            placed.Add((c, slot, depth));
-            return slot;
-        }
-        foreach (var r in roots) Place(r, 0);
-
-        double spacing = leaves == 0 ? 0 : Math.Min(13, 92.0 / leaves);
-        double start = (100 - spacing * leaves) / 2;
-        int maxDepth = 0;
-        foreach (var (c, slot, depth) in placed)
-        {
-            maxDepth = Math.Max(maxDepth, depth);
-            sb.Node(c, c.Label, start + (slot + 0.5) * spacing, 7 + depth * 12, NodeShape.Call);
-            if (c.Parent is not null) sb.Edge(c, c.Parent, c, directed: true);
-        }
-        sb.Height = Math.Max(28, 7 + maxDepth * 12 + 13);
-    }
+    private void Layout(SceneBuilder sb) =>
+        TreeLayout.Nary(sb, roots, c => c.Children, c => c.Label, shape: NodeShape.Call, directed: true);
 }

@@ -48,6 +48,10 @@ else
                     {
                         <GraphCanvas Frame="graph" />
                     }
+                    @if (Current?.Table is { } table)
+                    {
+                        <TableCanvas Frame="table" />
+                    }
                     @if (Current?.Array is { } arr)
                     {
                         <ArrayCanvas Frame="arr" />
@@ -94,7 +98,13 @@ else
                                 {
                                     <div class="field">
                                         <label for="param-@p.Name">@p.Label</label>
-                                        @if (p.Kind == ParamKind.Vertex)
+                                        @if (p.Kind == ParamKind.Text)
+                                        {
+                                            <input id="param-@p.Name" type="text" value="@paramText[p.Name]" spellcheck="false" autocomplete="off"
+                                                   @onchange="e => paramText[p.Name] = e.Value?.ToString() ?? string.Empty"
+                                                   @onkeydown="OnParamKey" />
+                                        }
+                                        else if (p.Kind == ParamKind.Vertex)
                                         {
                                             <select id="param-@p.Name" value="@paramText[p.Name]" @onchange="e => OnVertexChanged(p.Name, e.Value?.ToString())">
                                                 @for (int v = 0; v < session.Vertices.Count; v++)
@@ -129,9 +139,9 @@ else
                 @if (def.Input.Kind != InputKind.None)
                 {
                 <div class="box-card">
-                    @if (def.Input.Kind == InputKind.Graph)
+                    @if (def.Input.Kind == InputKind.Text)
                     {
-                        <header><Icon Name="vars" /> Graph <span class="muted">@session.Vertices.Count vertices</span></header>
+                        <header><Icon Name="vars" /> Data @if (session.Vertices.Count > 0) { <span class="muted">@session.Vertices.Count vertices</span> }</header>
                     }
                     else
                     {
@@ -139,9 +149,9 @@ else
                     }
                     <div class="body">
                         <div class="field" style="margin-top:0">
-                            @if (def.Input.Kind == InputKind.Graph)
+                            @if (def.Input.Kind == InputKind.Text)
                             {
-                                <label for="data-input">Edges (A-B:weight)</label>
+                                <label for="data-input">@def.Input.TextLabel</label>
                                 <textarea id="data-input" class="@(dataError is null ? "" : "invalid")" spellcheck="false"
                                           @onchange="e => dataText = e.Value?.ToString() ?? string.Empty">@dataText</textarea>
                             }
@@ -156,9 +166,9 @@ else
                             {
                                 <span class="field-error">@dataError</span>
                             }
-                            else if (def.Input.Kind == InputKind.Graph)
+                            else if (def.Input.Kind == InputKind.Text)
                             {
-                                <span class="field-hint">Undirected, vertices A–H, weights 1–99. Vertex positions are fixed so you can compare runs.</span>
+                                <span class="field-hint">@def.Input.TextHint</span>
                             }
                             else
                             {
@@ -292,7 +302,7 @@ else
     {
         op = o;
         paramText.Clear();
-        foreach (var p in o.Params) paramText[p.Name] = p.Default.ToString();
+        foreach (var p in o.Params) paramText[p.Name] = DefaultOf(p);
         lastResult = null;
         ShowIdle();
     }
@@ -302,7 +312,7 @@ else
     {
         if (IsStatic)
         {
-            var result = session.Run(op.Key, Args());
+            var result = session.Run(op.Key, Args(), Texts());
             player.Load([session.Snapshot($"Ready: {Describe()} Press play or Space to start."), .. result.Steps], autoplay: false);
         }
         else
@@ -323,10 +333,12 @@ else
         if (IsStatic) ShowIdle();
     }
 
+    private static string DefaultOf(ParamDef p) => p.Kind == ParamKind.Text ? p.DefaultText : p.Default.ToString();
+
     private Dictionary<string, int> Args()
     {
         var args = new Dictionary<string, int>();
-        foreach (var p in op.Params)
+        foreach (var p in op.Params.Where(p => p.Kind != ParamKind.Text))
         {
             args[p.Name] = int.TryParse(paramText.GetValueOrDefault(p.Name), out int v) ? Math.Clamp(v, p.Min, p.Max) : p.Default;
             paramText[p.Name] = args[p.Name].ToString();
@@ -335,19 +347,28 @@ else
     }
 
     private string ArgText(ParamDef p, int value) =>
-        p.Kind == ParamKind.Vertex && value < session.Vertices.Count ? session.Vertices[value] : value.ToString();
+        p.Kind switch
+        {
+            ParamKind.Vertex when value < session.Vertices.Count => session.Vertices[value],
+            ParamKind.Text => $"\"{paramText.GetValueOrDefault(p.Name)}\"",
+            _ => value.ToString(),
+        };
+
+    private Dictionary<string, string> Texts() =>
+        op.Params.Where(p => p.Kind == ParamKind.Text).ToDictionary(p => p.Name, p => paramText.GetValueOrDefault(p.Name) ?? "");
 
     private void RunOperation()
     {
         if (def is not { Available: true }) return;
         var args = Args();
-        string call = $"{op.Label}({string.Join(", ", op.Params.Select(p => $"{p.Name}: {ArgText(p, args[p.Name])}"))})";
+        string call = $"{op.Label}({string.Join(", ", op.Params.Select(p => $"{p.Name}: {ArgText(p, args.GetValueOrDefault(p.Name))}"))})";
         var before = session.Snapshot(def.Input.Kind == InputKind.Numbers
             ? $"Run {call} on [{string.Join(", ", Values)}]."
             : $"Run {call}.");
-        var result = session.Run(op.Key, args);
+        var result = session.Run(op.Key, args, Texts());
         lastResult = result;
         if (def.Input.Kind == InputKind.Numbers) dataText = string.Join(", ", Values);
+        else if (session.Persistent && session.Text is { } text) dataText = text;
         dataError = null;
         player.Load([before, .. result.Steps], autoplay: true);
     }
@@ -373,7 +394,7 @@ else
     private void ApplyData()
     {
         var spec = def!.Input;
-        if (spec.Kind == InputKind.Graph)
+        if (spec.Kind == InputKind.Text)
         {
             if (LoadText(dataText)) ShowIdle();
             return;
@@ -396,9 +417,9 @@ else
     private void RandomData()
     {
         var spec = def!.Input;
-        if (spec.Kind == InputKind.Graph)
+        if (spec.Kind == InputKind.Text)
         {
-            LoadText(AlgoSharp.Core.Algorithms.Graph.Random(rng).ToText());
+            if (def.RandomText is not null) LoadText(def.RandomText(rng));
             lastResult = null;
             ShowIdle();
             return;
@@ -420,7 +441,7 @@ else
     private void ResetData()
     {
         LoadDefault();
-        foreach (var p in op.Params) paramText[p.Name] = p.Default.ToString();
+        foreach (var p in op.Params) paramText[p.Name] = DefaultOf(p);
         lastResult = null;
         dataError = null;
         ShowIdle();

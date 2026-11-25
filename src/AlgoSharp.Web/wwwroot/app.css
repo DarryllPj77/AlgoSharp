@@ -995,3 +995,38 @@ a.card:hover .pv *, a.card:focus-visible .pv * { animation-play-state: running !
 .pv-hash i.new { border-color: var(--cat); background: color-mix(in srgb, var(--cat) 35%, var(--surface-3)); animation: pv-push 2.4s var(--ease) infinite; }
 a.card:hover .pv-svg .on { animation: pv-pulse 1.6s var(--ease) infinite; }
 @keyframes pv-pulse { 50% { fill: var(--cat); } }
+
+/* =========================================================================
+   DP table canvas
+   ========================================================================= */
+.tbl-wrap { overflow-x: auto; padding: 26px 18px 22px; }
+.tbl { border-collapse: separate; border-spacing: 4px; margin: 0 auto; font-family: var(--font-mono); }
+.tbl th {
+    font-size: 12px; font-weight: 600; color: var(--text-3);
+    min-width: 34px; height: 30px; padding: 0 6px; text-align: center;
+}
+.tbl th.corner { font-size: 10.5px; font-weight: 500; white-space: nowrap; }
+.tbl tbody th { text-align: right; white-space: nowrap; }
+.tbl td {
+    width: 42px; min-width: 42px; height: 38px; text-align: center;
+    border-radius: 8px;
+    border: 1.5px solid color-mix(in srgb, var(--c) 75%, var(--line-2));
+    background: color-mix(in srgb, var(--c) 18%, var(--surface-2));
+    font-size: 14px; font-weight: 650; color: var(--text);
+    transition: background-color var(--dur), border-color var(--dur), box-shadow var(--dur), opacity var(--dur);
+}
+.tbl td.s-default { background: var(--surface-2); border-color: var(--line-2); }
+.tbl td.empty { background: transparent; border-style: dashed; }
+.tbl td span { display: inline-block; animation: tbl-in var(--dur) var(--ease-spring); }
+.tbl td.s-new { box-shadow: 0 0 0 3px color-mix(in srgb, var(--st-new) 22%, transparent); }
+.tbl td.s-key { box-shadow: 0 0 0 3px color-mix(in srgb, var(--st-key) 25%, transparent); }
+.tbl td.s-visited { opacity: .7; }
+@keyframes tbl-in { from { transform: scale(.4); opacity: 0; } }
+.pv-table { display: grid; grid-template-columns: repeat(5, 18px); gap: 4px; }
+.pv-table span { height: 16px; border-radius: 4px; background: var(--surface-3); border: 1px solid var(--line-2); }
+a.card:hover .pv-table span { animation: pv-fill 2.4s steps(1) infinite; animation-delay: calc(var(--k) * 110ms); }
+@keyframes pv-fill { 0% { background: var(--surface-3); } 35%, 100% { background: color-mix(in srgb, var(--cat) 40%, var(--surface-3)); border-color: var(--cat); } }
+
+:root { --st-dim: var(--line-2); }
+
+.field input, .field textarea, .field select { font-variant-ligatures: none; }

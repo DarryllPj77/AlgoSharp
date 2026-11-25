@@ -8,9 +8,13 @@ public sealed record Category(string Key, string Name, string Blurb);
 
 public sealed record Complexity(string Best, string Average, string Worst, string Space, string Note);
 
-public enum ParamKind { Number, Vertex }
+public enum ParamKind { Number, Vertex, Text }
 
-public sealed record ParamDef(string Name, string Label, int Default, int Min = -99, int Max = 999, ParamKind Kind = ParamKind.Number);
+public sealed record ParamDef(string Name, string Label, int Default, int Min = -99, int Max = 999, ParamKind Kind = ParamKind.Number)
+{
+    /// <summary>Default for <see cref="ParamKind.Text"/> parameters.</summary>
+    public string DefaultText { get; init; } = "";
+}
 
 public sealed record OperationDef(
     string Key,
@@ -20,13 +24,15 @@ public sealed record OperationDef(
     Complexity Complexity,
     IReadOnlyList<ParamDef> Params);
 
-public enum InputKind { Numbers, Graph, None }
+public enum InputKind { Numbers, Text, None }
 
 /// <summary>Constraints for the user-editable data set.</summary>
 public sealed record InputSpec(int MinCount, int MaxCount, int MinValue, int MaxValue, int[] Default, bool SortedRequired = false)
 {
     public InputKind Kind { get; init; } = InputKind.Numbers;
     public string DefaultText { get; init; } = "";
+    public string TextLabel { get; init; } = "Edges (A-B:weight)";
+    public string TextHint { get; init; } = "";
 }
 
 public sealed record AlgorithmDef(
@@ -47,6 +53,9 @@ public sealed record AlgorithmDef(
 
     /// <summary>For text input (graphs): builds a session or throws <see cref="FormatException"/>.</summary>
     public Func<string, IVisualizerSession>? CreateFromText { get; init; }
+
+    /// <summary>Random input for text-based data.</summary>
+    public Func<Random, string>? RandomText { get; init; }
 }
 
 /// <summary>
@@ -59,6 +68,10 @@ public interface IVisualizerSession
     Step Snapshot(string message);
     int[] Values { get; }
     OperationResult Run(string operation, IReadOnlyDictionary<string, int> args);
+
+    /// <summary>Overload for operations with text parameters (words, strings, lists).</summary>
+    OperationResult Run(string operation, IReadOnlyDictionary<string, int> args, IReadOnlyDictionary<string, string> texts) =>
+        Run(operation, args);
 
     /// <summary>True when operations change the structure (and the next run starts from the result).</summary>
     bool Persistent => true;

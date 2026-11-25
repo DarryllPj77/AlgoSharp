@@ -21,6 +21,12 @@ dotnet test
 | 2 | Hash Table | Insert, Search, Delete with separate chaining |
 | 2 | Graphs | Adjacency lists, BFS, DFS, Dijkstra, Kruskal and Prim MST (editable edge list) |
 | 2 | Recursion Tree | Naive Fibonacci, memoized Fibonacci, Factorial |
+| 3 | Segment Tree | Range sum query, point update, build (array-backed, recursive) |
+| 3 | Union-Find | Union by rank, Find with path compression, Connected |
+| 3 | Dynamic Programming | LCS with traceback, coin change, bottom-up Fibonacci (live DP tables) |
+| 3 | Trie | Insert, search, starts-with |
+| 3 | Network Flow | Edmonds–Karp max flow with flow/capacity labels and residual paths |
+| 3 | Topological Sort | Kahn's algorithm with live in-degrees |
 
 Each visualizer has play, pause, step forward and back, a timeline you can scrub, seven speeds, custom and random input, variables, complexity, and a beginner-friendly explanation for every step. Keyboard: `Space` play, `←`/`→` step, `Home`/`End`, `R` run again, `/` search.
 
@@ -39,7 +45,8 @@ tests/AlgoSharp.Core.Tests
 
 - **C# owns the logic.** Algorithms in `Algorithms/` call a tracer (`T.At("cmp").Hl(...).Say(...)`) that records full snapshots. Every step is a complete state, so stepping backward is just showing an earlier snapshot. Nothing is replayed.
 - **The displayed code is the code that runs.** Algorithm files are embedded in the assembly. `CodeLibrary` cuts out each `// <code id="...">` region, hides lines that start with `T.`, and maps `// #label` markers to line numbers. Tests check that every recorded step points at a real line.
-- **Trees and graphs.** `GraphTracer` takes snapshots of the real structure as positioned nodes and edges. `TreeLayout` handles BSTs, heaps and call trees. `GraphCanvas` draws them in a coordinate space that scales with the container.
+- **Trees and graphs.** `GraphTracer` takes snapshots of the real structure as positioned nodes and edges. `TreeLayout` handles BSTs, heaps, call trees, tries and union-find forests. `GraphCanvas` draws them in a coordinate space that scales with the container.
+- **DP tables.** `TableTracer` reads the algorithm's own DP array, and shows only the cells that have been computed so far.
 - **Identity-tracked rendering.** Cells and nodes keep stable ids, so Blazor's keyed diffing combined with CSS transitions animates swaps, shifts, merges and pointer changes. No JavaScript animation library is needed. Linked-list snapshots come from walking the real `Node` objects.
 
 ## Adding an algorithm
@@ -47,5 +54,3 @@ tests/AlgoSharp.Core.Tests
 1. Write it in `src/AlgoSharp.Core/Algorithms/`, wrapped in a `// <code id="my-algo">` … `// </code>` region, with `// #label` markers and `T.` step calls.
 2. Register it in `AlgorithmCatalog.All` with its complexity, description and a session.
 3. `dotnet test`: `CodeSyncTests` will flag any step label that doesn't map to a line.
-
-Phase 3 topics (segment tree, union–find, dynamic programming, trie) are listed as roadmap cards on the homepage.

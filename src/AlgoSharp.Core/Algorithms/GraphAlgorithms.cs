@@ -209,6 +209,114 @@ public static class GraphAlgorithms
     }
     // </code>
 
+    // <code id="max-flow">
+    public static int MaxFlow(Graph g, int source, int sink, GraphTracer T)
+    {
+        int n = g.VertexCount; // #n
+        var cap = new int[n, n]; // #cap
+        foreach (var (u, v, w) in g.Edges) cap[u, v] = w; // #fillCap
+        var flow = new int[n, n]; // #flow
+        int total = 0; // #total
+        T.ForEach(g.Edges, e => T.EdgeLabel(E(e.U, e.V), $"0/{e.W}"));
+        T.Mark(Key, source);
+        T.Mark(Pivot, sink);
+        T.At("total").V("source", N(source)).V("sink", N(sink)).Say($"Each edge shows flow/capacity. Push as much as possible from {N(source)} to {N(sink)} without exceeding any capacity.");
+        while (true) // #loop
+        {
+            var prev = new int[n]; // #prev
+            Array.Fill(prev, -1); // #prevFill
+            prev[source] = source; // #prevSource
+            var queue = new Queue<int>(); // #queue
+            queue.Enqueue(source); // #enqSource
+            while (queue.Count > 0 && prev[sink] == -1) // #bfs
+            {
+                int u = queue.Dequeue(); // #deq
+                for (int v = 0; v < n; v++) // #scan
+                {
+                    if (prev[v] == -1 && cap[u, v] - flow[u, v] > 0) // #residual
+                    {
+                        prev[v] = u; // #setPrev
+                        queue.Enqueue(v); // #enq
+                        T.At("enq").Hl(Compare, u).Hl(Visited, v).HlEdge(Compare, E(u, v)).V("u", N(u)).V("v", N(v)).V("residual", cap[u, v] - flow[u, v]).Say(cap[u, v] > 0 ? $"BFS: {N(u)} → {N(v)} still has {cap[u, v] - flow[u, v]} spare capacity." : $"BFS: {N(v)} can be reached by undoing {-flow[u, v] + cap[u, v]} unit(s) of flow on {N(v)} → {N(u)}.");
+                    }
+                }
+            }
+            T.At("noPath").V("total", total).Say(prev[sink] == -1 ? $"No augmenting path to {N(sink)} remains in the residual graph." : $"BFS found a path to {N(sink)}.");
+            if (prev[sink] == -1) break; // #noPath
+            int bottleneck = int.MaxValue; // #bn
+            for (int v = sink; v != source; v = prev[v]) // #walk
+            {
+                bottleneck = Math.Min(bottleneck, cap[prev[v], v] - flow[prev[v], v]); // #min
+            }
+            T.At("min").HlEdges(Active, PathEdges(prev, source, sink)).Hl(Found, source).Hl(Found, sink).V("path", g.Names(Path(prev, source, sink))).V("bottleneck", bottleneck).V("total", total).Say($"Shortest augmenting path {g.Names(Path(prev, source, sink))}. Its tightest edge allows {bottleneck} more unit(s): the bottleneck.");
+            for (int v = sink; v != source; v = prev[v]) // #augment
+            {
+                flow[prev[v], v] += bottleneck; // #push
+                flow[v, prev[v]] -= bottleneck; // #cancel
+            }
+            total += bottleneck; // #add
+            T.ForEach(g.Edges, e => T.EdgeLabel(E(e.U, e.V), $"{flow[e.U, e.V]}/{e.W}"));
+            T.ForEach(g.Edges, e => T.MarkEdge(flow[e.U, e.V] == e.W ? Removed : flow[e.U, e.V] > 0 ? Sorted : Default, E(e.U, e.V)));
+            T.At("add").V("bottleneck", bottleneck).V("total", total).Say($"Push {bottleneck} along the path (and allow it to be undone later via reverse edges). Total flow = {total}. Red edges are saturated.");
+        }
+        T.At("ret").V("max flow", total).Say($"Max flow = {total}. It equals the capacity of the saturated edges cut between what BFS could still reach and the rest (max-flow min-cut). Edmonds–Karp: O(V·E²).");
+        return total; // #ret
+    }
+    // </code>
+
+    // <code id="topo-sort">
+    public static List<int> TopologicalSort(Graph g, GraphTracer T)
+    {
+        var indegree = new int[g.VertexCount]; // #indeg
+        foreach (var (u, v, _) in g.Edges) indegree[v]++; // #count
+        T.BadgeEach(g.VertexCount, x => $"in {indegree[x]}");
+        T.At("count").V("indegree", indegree).Say("Count incoming edges. A vertex with in-degree 0 has no unfinished prerequisites.");
+        var queue = new Queue<int>(); // #queue
+        for (int v = 0; v < g.VertexCount; v++) // #seed
+        {
+            if (indegree[v] == 0) queue.Enqueue(v); // #enqZero
+        }
+        T.ForEach(queue, v => T.Mark(Pivot, v));
+        T.At("enqZero").V("queue", g.Names(queue)).Say($"Start with every vertex of in-degree 0: {g.Names(queue)}.");
+        var order = new List<int>(); // #order
+        while (queue.Count > 0) // #loop
+        {
+            int u = queue.Dequeue(); // #deq
+            order.Add(u); // #visit
+            T.Mark(Sorted, u);
+            T.At("visit").Hl(Key, u).Ptr("u", u).V("u", N(u)).V("queue", g.Names(queue)).V("order", g.Names(order)).Say($"Output {N(u)}. Now remove its outgoing edges.");
+            foreach (var (v, _) in g.Adj[u]) // #edges
+            {
+                indegree[v]--; // #dec
+                T.Badge(v, $"in {indegree[v]}");
+                T.MarkEdge(Dim, E(u, v));
+                T.At("dec").Hl(Key, u).Hl(Compare, v).HlEdge(Compare, E(u, v)).Ptr("u", u).V("v", N(v)).V($"indegree[{N(v)}]", indegree[v]).Say(indegree[v] == 0 ? $"{N(v)}'s last prerequisite is done: in-degree 0." : $"{N(v)} still waits on {indegree[v]} edge(s).");
+                if (indegree[v] == 0) // #zero
+                {
+                    queue.Enqueue(v); // #enq
+                    T.Mark(Pivot, v);
+                    T.At("enq").Hl(Key, u).Ptr("u", u).V("queue", g.Names(queue)).Say($"Enqueue {N(v)}.");
+                }
+            }
+        }
+        T.At("ret").V("order", g.Names(order)).Say(order.Count == g.VertexCount ? $"Topological order: {g.Names(order)}. Every edge points forward in this order. Kahn's algorithm is O(V + E)." : $"Only {order.Count} of {g.VertexCount} vertices were output: the rest are stuck in a cycle, so no topological order exists.");
+        return order; // #ret
+    }
+    // </code>
+
+    private static IEnumerable<object> PathEdges(int[] prev, int source, int sink)
+    {
+        for (int v = sink; v != source; v = prev[v]) yield return E(prev[v], v);
+    }
+
+    private static List<int> Path(int[] prev, int source, int sink)
+    {
+        var path = new List<int> { sink };
+        for (int v = sink; v != source; v = prev[v]) path.Add(prev[v]);
+        path.Reverse();
+        return path;
+    }
+
     private static string Inf(int d) => d == int.MaxValue ? "∞" : d.ToString();
 
     private static string Queue(PriorityQueue<int, int> pq) =>

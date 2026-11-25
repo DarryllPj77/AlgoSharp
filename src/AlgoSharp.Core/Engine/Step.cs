@@ -74,6 +74,15 @@ public sealed record GraphFrame(
     IReadOnlyList<GEdge> Edges,
     IReadOnlyList<GPointer> Pointers);
 
+public sealed record TableCell(string Value, CellState State);
+
+/// <summary>A dynamic-programming table: headers plus a grid of cells.</summary>
+public sealed record TableFrame(
+    IReadOnlyList<string> RowHeaders,
+    IReadOnlyList<string> ColHeaders,
+    IReadOnlyList<IReadOnlyList<TableCell>> Rows,
+    string Corner);
+
 /// <summary>
 /// One deterministic snapshot of an algorithm's execution. Steps are complete snapshots,
 /// so the UI can jump to any index (forwards or backwards) without replaying.
@@ -85,4 +94,5 @@ public sealed record Step(
     ArrayFrame? Array = null,
     ListFrame? List = null,
     bool IsError = false,
-    GraphFrame? Graph = null);
+    GraphFrame? Graph = null,
+    TableFrame? Table = null);

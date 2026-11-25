@@ -1,0 +1,35 @@
+@* Renders a TableFrame. Cells are keyed by position; colour changes animate via CSS. *@
+
+<div class="tbl-wrap">
+    <table class="tbl" style="--cols:@Frame.ColHeaders.Count">
+        <thead>
+            <tr>
+                <th class="corner">@Frame.Corner</th>
+                @for (int c = 0; c < Frame.ColHeaders.Count; c++)
+                {
+                    <th>@Frame.ColHeaders[c]</th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            @for (int r = 0; r < Frame.Rows.Count; r++)
+            {
+                var row = Frame.Rows[r];
+                <tr>
+                    <th>@(r < Frame.RowHeaders.Count ? Frame.RowHeaders[r] : "")</th>
+                    @for (int c = 0; c < row.Count; c++)
+                    {
+                        var cell = row[c];
+                        <td class="s-@cell.State.ToString().ToLowerInvariant() @(cell.Value.Length == 0 ? "empty" : "")">
+                            <span @key="cell.Value">@cell.Value</span>
+                        </td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public TableFrame Frame { get; set; } = default!;
+}

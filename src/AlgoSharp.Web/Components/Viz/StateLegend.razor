@@ -24,6 +24,12 @@
         "dijkstra" => [("key", "Settling"), ("pivot", "In queue"), ("sorted", "Settled / path tree"), ("compare", "Relaxing")],
         "mst" => [("compare", "Considering"), ("sorted", "In the MST"), ("visited", "Rejected (faded)")],
         "recursion-tree" => [("key", "Current call"), ("active", "Waiting on stack"), ("sorted", "Returned"), ("found", "Memo hit")],
+        "segment-tree" => [("key", "Partial overlap"), ("found", "Fully inside (used)"), ("dim", "No overlap"), ("new", "Computed / updated")],
+        "union-find" => [("compare", "Climbing"), ("key", "Roots"), ("new", "Re-linked"), ("found", "Same set")],
+        "dynamic-programming" => [("compare", "Inputs to this cell"), ("new", "Just computed"), ("found", "In the answer"), ("visited", "Traceback")],
+        "trie" => [("key", "Current node"), ("new", "New node"), ("visited", "Walked"), ("found", "Word / prefix found")],
+        "network-flow" => [("active", "Augmenting path"), ("sorted", "Carries flow"), ("removed", "Saturated"), ("compare", "BFS")],
+        "topological-sort" => [("pivot", "Ready (in-degree 0)"), ("key", "Current"), ("sorted", "Output"), ("compare", "Edge removed")],
         _ => [("compare", "Checking"), ("swap", "Moved"), ("new", "Written"), ("removed", "Removed"), ("found", "Result")],
     };
 }

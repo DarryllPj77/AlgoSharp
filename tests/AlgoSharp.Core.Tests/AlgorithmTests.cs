@@ -183,15 +183,16 @@ public class CodeSyncTests
     [Fact]
     public void Every_recorded_step_points_at_a_displayed_line()
     {
-        var args = new Dictionary<string, int> { ["index"] = 1, ["value"] = 30, ["target"] = 33, ["start"] = 0, ["n"] = 4 };
+        var args = new Dictionary<string, int> { ["index"] = 1, ["value"] = 30, ["target"] = 33, ["start"] = 0, ["n"] = 4, ["l"] = 1, ["r"] = 4, ["a"] = 2, ["b"] = 7, ["sink"] = 6, ["amount"] = 6 };
         foreach (var def in AlgorithmCatalog.All.Where(a => a.Available))
         {
             foreach (var op in def.Operations)
             {
                 var region = CodeLibrary.Get(op.CodeId);
                 var session = def.CreateFromText is { } fromText ? fromText(def.Input.DefaultText) : def.CreateSession!(def.Input.Default);
-                var result = session.Run(op.Key, args);
+                var result = session.Run(op.Key, args, op.Params.Where(p => p.Kind == ParamKind.Text).ToDictionary(p => p.Name, p => p.DefaultText));
                 Assert.NotEmpty(result.Steps);
+                Assert.False(result.Failed, $"{def.Slug}/{op.Key}: {result.Summary}");
                 foreach (var step in result.Steps.Where(s => s.Label != ""))
                 {
                     Assert.True(region.LineOf(step.Label) > 0, $"{def.Slug}/{op.Key}: label '{step.Label}' has no line in region '{op.CodeId}'");

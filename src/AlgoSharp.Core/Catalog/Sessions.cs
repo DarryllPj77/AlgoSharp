@@ -267,7 +267,22 @@ public sealed class GraphSession(Graph graph) : IVisualizerSession
     {
         var tracer = new GraphTracer(graph.Scene);
         int start = Math.Clamp(args.Arg("start"), 0, graph.VertexCount - 1);
-        string summary = operation switch
+        string summary;
+        try
+        {
+            summary = Dispatch(operation, args, tracer, start);
+        }
+        catch (InvalidOperationException ex)
+        {
+            tracer.At("").Error(ex.Message);
+            return new OperationResult(tracer.Steps, ex.Message, true);
+        }
+        return new OperationResult(tracer.Steps, summary, false);
+    }
+
+    private string Dispatch(string operation, IReadOnlyDictionary<string, int> args, GraphTracer tracer, int start)
+    {
+        return operation switch
         {
             "neighbors" => $"Neighbors({Graph.Name(start)}) = {graph.Names(GraphAlgorithms.Neighbors(graph, start, tracer))}.",
             "bfs" => $"BFS from {Graph.Name(start)}: {graph.Names(GraphAlgorithms.Bfs(graph, start, tracer))}.",
@@ -275,9 +290,11 @@ public sealed class GraphSession(Graph graph) : IVisualizerSession
             "dijkstra" => Distances(GraphAlgorithms.Dijkstra(graph, start, tracer)),
             "kruskal" => $"Kruskal MST weight = {GraphAlgorithms.Kruskal(graph, tracer).Sum(e => e.W)}.",
             "prim" => $"Prim MST weight = {GraphAlgorithms.Prim(graph, start, tracer).Sum(e => e.W)}.",
+            "maxflow" when start == Math.Clamp(args.Arg("sink"), 0, graph.VertexCount - 1) => throw new InvalidOperationException("Source and sink must differ."),
+            "maxflow" => $"Max flow {Graph.Name(start)} → {Graph.Name(Math.Clamp(args.Arg("sink"), 0, graph.VertexCount - 1))} = {GraphAlgorithms.MaxFlow(graph, start, Math.Clamp(args.Arg("sink"), 0, graph.VertexCount - 1), tracer)}.",
+            "topo" => $"Topological order: {graph.Names(GraphAlgorithms.TopologicalSort(graph, tracer))}.",
             _ => throw new ArgumentException($"Unknown operation {operation}"),
         };
-        return new OperationResult(tracer.Steps, summary, false);
     }
 
     private static string Distances(int[] dist) =>
@@ -303,5 +320,187 @@ public sealed class RecursionSession : IVisualizerSession
             _ => throw new ArgumentException($"Unknown operation {operation}"),
         };
         return new OperationResult(tracer.Steps, summary, false);
+    }
+}
+
+internal static class TextArgs
+{
+    public static string Text(this IReadOnlyDictionary<string, string> texts, string name) =>
+        texts.TryGetValue(name, out var v) ? v.Trim() : "";
+
+    public static string Word(this IReadOnlyDictionary<string, string> texts, string name, int maxLength, bool upper = false)
+    {
+        string w = texts.Text(name);
+        w = upper ? w.ToUpperInvariant() : w.ToLowerInvariant();
+        if (w.Length == 0) throw new InvalidOperationException($"Enter a value for {name}.");
+        if (w.Length > maxLength) throw new InvalidOperationException($"Keep {name} to {maxLength} letters or fewer.");
+        if (!w.All(c => upper ? c is >= 'A' and <= 'Z' : c is >= 'a' and <= 'z'))
+            throw new InvalidOperationException($"Use only letters {(upper ? "A–Z" : "a–z")} in {name}.");
+        return w;
+    }
+}
+
+public sealed class SegmentTreeSession(int[] input) : IVisualizerSession
+{
+    private readonly SegmentTree tree = new(input);
+
+    public int[] Values => tree.Values;
+
+    public Step Snapshot(string message) => tree.T.Snapshot(message);
+
+    public OperationResult Run(string operation, IReadOnlyDictionary<string, int> args)
+    {
+        tree.T.BeginOperation();
+        var result = SessionHelpers.Execute(() => tree.T.Steps, () =>
+        {
+            int n = tree.Length;
+            switch (operation)
+            {
+                case "build":
+                    tree.Build();
+                    return $"Built a tree of {2 * n - 1} nodes. Total = {tree.Root}.";
+                case "query":
+                    int l = args.Arg("l"), r = args.Arg("r");
+                    if (l < 0 || r >= n || l > r) throw new InvalidOperationException($"Choose 0 ≤ l ≤ r ≤ {n - 1}.");
+                    int sum = tree.Query(l, r);
+                    tree.T.At("start").V("sum", sum).Say($"Sum of [{l}..{r}] = {sum}. Green nodes were used whole; at most ~4 nodes per level are touched: O(log n).");
+                    return $"Query({l}, {r}) = {sum}.";
+                case "update":
+                    int i = args.Arg("index"), v = args.Arg("value");
+                    if (i < 0 || i >= n) throw new InvalidOperationException($"Index must be 0..{n - 1}.");
+                    tree.Update(i, v);
+                    tree.T.At("start").V("root", tree.Root).Say($"Updated index {i} to {v}. New total: {tree.Root}.");
+                    return $"Update({i}, {v}). Total = {tree.Root}.";
+                default:
+                    throw new ArgumentException($"Unknown operation {operation}");
+            }
+        });
+        tree.T.RevealAll();
+        return result;
+    }
+}
+
+public sealed class UnionFindSession : IVisualizerSession
+{
+    private readonly UnionFind sets = new(10);
+
+    public UnionFindSession()
+    {
+        foreach (var (a, b) in new[] { (0, 1), (2, 3), (1, 3), (5, 6), (7, 8) }) sets.Union(a, b);
+        sets.T.BeginOperation();
+    }
+
+    public int[] Values => sets.Parents;
+
+    public Step Snapshot(string message) => sets.T.Snapshot(message);
+
+    public OperationResult Run(string operation, IReadOnlyDictionary<string, int> args)
+    {
+        sets.T.BeginOperation();
+        int a = args.Arg("a"), b = args.Arg("b");
+        return SessionHelpers.Execute(() => sets.T.Steps, () => operation switch
+        {
+            "union" => sets.Union(a, b) ? $"Union({a}, {b}) merged two sets. {sets.Sets} set(s) left." : $"{a} and {b} were already together.",
+            "find" => $"Find({a}) = {sets.Find(a)}.",
+            "connected" => sets.Connected(a, b) ? $"{a} and {b} are connected." : $"{a} and {b} are not connected.",
+            _ => throw new ArgumentException($"Unknown operation {operation}"),
+        });
+    }
+}
+
+public sealed class TrieSession(IEnumerable<string> words) : IVisualizerSession
+{
+    private readonly Trie trie = new(words);
+
+    public int[] Values => [];
+    public string Text => string.Join(", ", trie.Words());
+
+    public Step Snapshot(string message) => trie.T.Snapshot(message);
+
+    public OperationResult Run(string operation, IReadOnlyDictionary<string, int> args) => Run(operation, args, new Dictionary<string, string>());
+
+    public OperationResult Run(string operation, IReadOnlyDictionary<string, int> args, IReadOnlyDictionary<string, string> texts)
+    {
+        trie.T.BeginOperation();
+        return SessionHelpers.Execute(() => trie.T.Steps, () =>
+        {
+            string w = texts.Word("word", 8);
+            switch (operation)
+            {
+                case "insert":
+                    if (trie.Words().Count >= 12 && !trie.Words().Contains(w)) throw new InvalidOperationException("This visualizer keeps at most 12 words.");
+                    trie.Insert(w);
+                    return $"Inserted \"{w}\". {trie.NodeCount()} nodes store {trie.Words().Count} words.";
+                case "search":
+                    return trie.Contains(w) ? $"\"{w}\" is stored." : $"\"{w}\" is not stored.";
+                case "prefix":
+                    return trie.StartsWith(w) ? $"Some word starts with \"{w}\"." : $"No word starts with \"{w}\".";
+                default:
+                    throw new ArgumentException($"Unknown operation {operation}");
+            }
+        });
+    }
+
+    public static TrieSession Parse(string text)
+    {
+        var words = text.Split([',', ' ', ';', '\n'], StringSplitOptions.RemoveEmptyEntries).Select(w => w.Trim().ToLowerInvariant()).ToList();
+        if (words.Count > 12) throw new FormatException("Use at most 12 words.");
+        foreach (var w in words)
+        {
+            if (w.Length > 8 || !w.All(c => c is >= 'a' and <= 'z')) throw new FormatException($"“{w}”: use words of up to 8 letters a–z.");
+        }
+        return new TrieSession(words);
+    }
+}
+
+public sealed class DpSession : IVisualizerSession
+{
+    public int[] Values => [];
+    public bool Persistent => false;
+
+    public Step Snapshot(string message) => new TableTracer([""], [""]).Snapshot(message);
+
+    public OperationResult Run(string operation, IReadOnlyDictionary<string, int> args) => Run(operation, args, new Dictionary<string, string>());
+
+    public OperationResult Run(string operation, IReadOnlyDictionary<string, int> args, IReadOnlyDictionary<string, string> texts)
+    {
+        try
+        {
+            switch (operation)
+            {
+                case "lcs":
+                {
+                    string a = texts.Word("a", 8, upper: true), b = texts.Word("b", 8, upper: true);
+                    var t = DynamicProgramming.LcsTable(a, b);
+                    string lcs = DynamicProgramming.Lcs(a, b, t);
+                    return new OperationResult(t.Steps, $"LCS(\"{a}\", \"{b}\") = \"{lcs}\" (length {lcs.Length}).", false);
+                }
+                case "coins":
+                {
+                    int amount = Math.Clamp(args.Arg("amount"), 1, 20);
+                    var coins = texts.Text("coins").Split([',', ' '], StringSplitOptions.RemoveEmptyEntries)
+                        .Select(c => int.TryParse(c, out int v) && v is >= 1 and <= 20 ? v : throw new InvalidOperationException($"“{c}” is not a coin between 1 and 20."))
+                        .Distinct().Order().ToArray();
+                    if (coins.Length is 0 or > 6) throw new InvalidOperationException("Enter 1–6 coin values, e.g. 1, 3, 4.");
+                    var t = DynamicProgramming.CoinTable(amount);
+                    int result = DynamicProgramming.MinCoins(coins, amount, t);
+                    return new OperationResult(t.Steps, result < 0 ? $"{amount} can't be made." : $"MinCoins = {result}.", false);
+                }
+                case "fib":
+                {
+                    int n = Math.Clamp(args.Arg("n"), 1, 15);
+                    var t = DynamicProgramming.FibTable(n);
+                    return new OperationResult(t.Steps, $"fib({n}) = {DynamicProgramming.Fib(n, t)}.", false);
+                }
+                default:
+                    throw new ArgumentException($"Unknown operation {operation}");
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            var t = new TableTracer([""], [""]);
+            t.At("").Say(ex.Message);
+            return new OperationResult([t.Steps[0] with { IsError = true }], ex.Message, true);
+        }
     }
 }
