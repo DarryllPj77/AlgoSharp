@@ -88,7 +88,7 @@ public static partial class CodeLibrary
     [GeneratedRegex(@"\s*//\s*#([A-Za-z0-9_-]+)\s*$")]
     private static partial Regex LabelRegex();
 
-    [GeneratedRegex(@",\s*(?:(?:ArrayTracer|ListTracer<\w+>)\s+)?T\b(?=\s*\))")]
+    [GeneratedRegex(@",\s*(?:\w*Tracer(?:<\w+>)?\s+)?T\b(?=\s*\))")]
     private static partial Regex TracerParamRegex();
 
     [GeneratedRegex(@"^\s*//\s*<code id=""([^""]+)"">\s*$")]

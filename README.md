@@ -7,15 +7,20 @@ dotnet run --project src/AlgoSharp.Web --launch-profile http   # http://localhos
 dotnet test
 ```
 
-## What's included (Phase 1)
+## What's included
 
-| Area | Visualizers |
-| --- | --- |
-| Arrays | Access, Insert, Delete, Update, Linear Search |
-| Sorting | Bubble, Selection, Insertion, Merge, Quick (Lomuto) |
-| Searching | Linear Search, Binary Search |
-| Linked List | Insert, Delete, Search, Traverse |
-| Stack & Queue | Push / Pop / Peek, Enqueue / Dequeue / Peek (circular array) |
+| Phase | Area | Visualizers |
+| --- | --- | --- |
+| 1 | Arrays | Access, Insert, Delete, Update, Linear Search |
+| 1 | Sorting | Bubble, Selection, Insertion, Merge, Quick (Lomuto) |
+| 1 | Searching | Linear Search, Binary Search |
+| 1 | Linked List | Insert, Delete, Search, Traverse |
+| 1 | Stack & Queue | Push / Pop / Peek, Enqueue / Dequeue / Peek (circular array) |
+| 2 | Binary Search Tree | Insert, Search, Delete (0/1/2 children), In-order traversal |
+| 2 | Binary Heap | Insert (sift up), Extract Min (sift down), Peek, with tree and array views |
+| 2 | Hash Table | Insert, Search, Delete with separate chaining |
+| 2 | Graphs | Adjacency lists, BFS, DFS, Dijkstra, Kruskal and Prim MST (editable edge list) |
+| 2 | Recursion Tree | Naive Fibonacci, memoized Fibonacci, Factorial |
 
 Each visualizer has play, pause, step forward and back, a timeline you can scrub, seven speeds, custom and random input, variables, complexity, and a beginner-friendly explanation for every step. Keyboard: `Space` play, `←`/`→` step, `Home`/`End`, `R` run again, `/` search.
 
@@ -34,6 +39,7 @@ tests/AlgoSharp.Core.Tests
 
 - **C# owns the logic.** Algorithms in `Algorithms/` call a tracer (`T.At("cmp").Hl(...).Say(...)`) that records full snapshots. Every step is a complete state, so stepping backward is just showing an earlier snapshot. Nothing is replayed.
 - **The displayed code is the code that runs.** Algorithm files are embedded in the assembly. `CodeLibrary` cuts out each `// <code id="...">` region, hides lines that start with `T.`, and maps `// #label` markers to line numbers. Tests check that every recorded step points at a real line.
+- **Trees and graphs.** `GraphTracer` takes snapshots of the real structure as positioned nodes and edges. `TreeLayout` handles BSTs, heaps and call trees. `GraphCanvas` draws them in a coordinate space that scales with the container.
 - **Identity-tracked rendering.** Cells and nodes keep stable ids, so Blazor's keyed diffing combined with CSS transitions animates swaps, shifts, merges and pointer changes. No JavaScript animation library is needed. Linked-list snapshots come from walking the real `Node` objects.
 
 ## Adding an algorithm
@@ -42,4 +48,4 @@ tests/AlgoSharp.Core.Tests
 2. Register it in `AlgorithmCatalog.All` with its complexity, description and a session.
 3. `dotnet test`: `CodeSyncTests` will flag any step label that doesn't map to a line.
 
-Phase 2 (BST, heap, hash table, graphs, Dijkstra, MST, recursion tree) and Phase 3 topics are listed as roadmap cards on the homepage.
+Phase 3 topics (segment tree, union–find, dynamic programming, trie) are listed as roadmap cards on the homepage.

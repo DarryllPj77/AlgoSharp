@@ -891,3 +891,107 @@ a.card:hover .pv *, a.card:focus-visible .pv * { animation-play-state: running !
 /* icons default to text size; components override where needed */
 .ic { width: 16px; height: 16px; flex: none; }
 .box-card > header .ic { width: 15px; height: 15px; color: var(--cat, var(--text-3)); }
+
+/* =========================================================================
+   Graph / tree canvas (logical 100-unit-wide coordinate space)
+   ========================================================================= */
+.gv { container-type: inline-size; padding: 30px 16px 26px; overflow-x: auto; }
+.gv-area {
+    --u: min(1cqw, 8.4px);
+    position: relative;
+    width: calc(100 * var(--u));
+    height: calc(var(--h) * var(--u));
+    margin: 0 auto;
+    font-size: max(10px, calc(var(--u) * 2));
+}
+.gv-node, .gv-edge, .gv-weight, .gv-ptr { position: absolute; left: 0; top: 0; }
+.gv-node {
+    --nw: 6; --nh: 6;
+    width: calc(var(--nw) * var(--u)); height: calc(var(--nh) * var(--u));
+    transform: translate(calc((var(--x) - var(--nw) / 2) * var(--u)), calc((var(--y) - var(--nh) / 2) * var(--u)));
+    transition: transform var(--dur) var(--ease), background-color var(--dur), border-color var(--dur), box-shadow var(--dur);
+    display: grid; place-items: center;
+    border-radius: 50%;
+    border: 1.5px solid color-mix(in srgb, var(--c) 80%, var(--line-2));
+    background: color-mix(in srgb, var(--c) 22%, var(--surface-2));
+    font-family: var(--font-mono); font-weight: 650;
+    z-index: 2;
+    animation: fade-in var(--dur) var(--ease);
+}
+.gv-node.s-default { --c: var(--line-2); background: var(--surface-2); }
+.gv-node.shape-slot { --nw: 7; --nh: 6; border-radius: 8px; background: var(--surface-3); border-color: var(--line-2); color: var(--text-3); font-size: .85em; }
+.gv-node.shape-slot.s-key { background: color-mix(in srgb, var(--st-key) 18%, var(--surface-3)); border-color: var(--st-key); color: var(--text); }
+.gv-node.shape-call { --nw: 6.8; --nh: 4.6; border-radius: 999px; font-size: .82em; }
+.gv-node.s-active.shape-call { background: var(--surface-2); border-style: dashed; border-color: var(--st-active); }
+.gv-node.s-key { box-shadow: 0 0 0 4px color-mix(in srgb, var(--st-key) 22%, transparent); }
+.gv-node.s-found { box-shadow: 0 0 0 4px color-mix(in srgb, var(--st-found) 22%, transparent); }
+.gv-node.s-removed { border-style: dashed; animation: none; opacity: .75; }
+.gv-node.s-dim { opacity: .35; }
+.gv-node .lbl { line-height: 1; }
+.gv-badge {
+    position: absolute; top: calc(100% + 3px); left: 50%; transform: translateX(-50%);
+    font-size: .78em; font-weight: 600; color: var(--text-2); white-space: nowrap;
+    padding: 0 4px; border-radius: 4px; background: color-mix(in srgb, var(--surface) 85%, transparent);
+}
+.gv-node.s-sorted .gv-badge, .gv-node.s-found .gv-badge { color: var(--st-sorted); }
+
+.gv-edge {
+    height: 2px; transform-origin: 0 50%;
+    transform: translate(calc(var(--x) * var(--u)), calc(var(--y) * var(--u) - 1px)) rotate(var(--a));
+    width: calc(var(--len) * var(--u));
+    background: var(--ec, var(--line-2));
+    transition: transform var(--dur) var(--ease), width var(--dur) var(--ease), background-color var(--dur), opacity var(--dur), height var(--dur);
+    z-index: 1;
+}
+.gv-edge.dir::after {
+    content: ""; position: absolute; right: -1px; top: -4px;
+    border: 5px solid transparent; border-left: 7px solid var(--ec, var(--line-2)); border-right: 0;
+}
+.gv-edge.s-active { --ec: var(--st-active); height: 3px; }
+.gv-edge.s-compare { --ec: var(--st-compare); height: 3px; }
+.gv-edge.s-sorted { --ec: var(--st-sorted); height: 4px; }
+.gv-edge.s-dim { opacity: .25; }
+.gv-weight {
+    transform: translate(calc(var(--x) * var(--u)), calc(var(--y) * var(--u))) translate(-50%, -50%);
+    transition: transform var(--dur) var(--ease), color var(--dur), opacity var(--dur);
+    font-family: var(--font-mono); font-size: .8em; font-weight: 600; color: var(--text-2);
+    padding: 0 4px; border-radius: 5px; background: var(--surface); line-height: 1.4;
+    z-index: 1;
+}
+.gv-weight.s-sorted { color: var(--st-sorted); }
+.gv-weight.s-compare, .gv-weight.s-active { color: var(--text); }
+.gv-weight.s-dim { opacity: .35; }
+.gv-ptr {
+    transform: translate(calc(var(--x) * var(--u)), calc(var(--y) * var(--u)));
+    transition: transform var(--dur) var(--ease);
+    z-index: 3; pointer-events: none;
+    animation: fade-in var(--dur) var(--ease);
+}
+.gv-ptr span {
+    display: inline-block; transform: translate(-50%, -100%);
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--ptr, var(--text));
+    padding: 0 6px; border-radius: 5px; white-space: nowrap;
+    background: color-mix(in srgb, var(--ptr, var(--text)) 14%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--ptr, var(--text)) 35%, transparent);
+}
+.stage .gv + .arr { border-top: 1px dashed var(--line); padding-top: 18px; }
+.gv-node.s-pivot { --c: var(--st-pivot); }
+.field textarea {
+    min-height: 92px; resize: vertical; padding: 9px 12px; border-radius: 9px;
+    border: 1px solid var(--line); background: var(--bg-raised);
+    font-family: var(--font-mono); font-size: 13px; line-height: 1.5; outline: none; width: 100%;
+}
+.field textarea:focus { border-color: var(--cat); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cat) 16%, transparent); }
+.field textarea.invalid { border-color: var(--st-error); }
+.field select {
+    height: 38px; padding: 0 10px; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--bg-raised); font-family: var(--font-mono); font-size: 13.5px; outline: none; width: 100%;
+}
+.field select:focus { border-color: var(--cat); }
+.pv-hash { display: flex; flex-direction: column; gap: 5px; }
+.pv-hash div { display: flex; align-items: center; gap: 4px; }
+.pv-hash b { width: 18px; height: 16px; border-radius: 4px; background: var(--surface-3); border: 1px solid var(--line-2); }
+.pv-hash i { width: 24px; height: 16px; border-radius: 8px; background: var(--surface-3); border: 1px solid var(--line-2); }
+.pv-hash i.new { border-color: var(--cat); background: color-mix(in srgb, var(--cat) 35%, var(--surface-3)); animation: pv-push 2.4s var(--ease) infinite; }
+a.card:hover .pv-svg .on { animation: pv-pulse 1.6s var(--ease) infinite; }
+@keyframes pv-pulse { 50% { fill: var(--cat); } }

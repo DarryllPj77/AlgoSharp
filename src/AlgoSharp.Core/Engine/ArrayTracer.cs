@@ -73,6 +73,12 @@ public sealed class ArrayTracer
         c.Pos = to;
     }
 
+    /// <summary>Like <see cref="Move"/>, but does nothing when the source slot is empty.</summary>
+    public void MoveIfPresent(int from, int to)
+    {
+        if (MainAt(from) is not null) Move(from, to);
+    }
+
     public void Lift(int pos)
     {
         var c = MainAt(pos) ?? throw new InvalidOperationException($"No cell at {pos}");

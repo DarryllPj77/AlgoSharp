@@ -19,6 +19,9 @@ public static class AlgorithmCatalog
     private static readonly ParamDef Index = new("index", "Index", 2, 0, 20);
     private static readonly ParamDef Value = new("value", "Value", 42, -99, 999);
     private static readonly ParamDef Target = new("target", "Target", 42, -99, 999);
+    private static readonly ParamDef Start = new("start", "Start vertex", 0, 0, Graph.MaxVertices - 1, ParamKind.Vertex);
+
+    private static readonly InputSpec GraphInput = new(0, 0, 0, 0, []) { Kind = InputKind.Graph, DefaultText = Graph.DefaultText };
 
     private static OperationDef Sort(string codeId, string summary, Complexity c) =>
         new("sort", "Sort", codeId, summary, c, []);
@@ -130,13 +133,82 @@ public static class AlgorithmCatalog
             new(0, 8, 0, 99, [5, 12, 19, 26]),
             "queue", v => new QueueSession(v, 8)),
 
-        Soon("bst", "Binary Search Tree", Trees, Difficulty.Intermediate, "Ordered tree with O(log n) average search.", "tree", 2),
-        Soon("binary-heap", "Binary Heap", Trees, Difficulty.Intermediate, "Priority queue stored in an array.", "heap", 2),
-        Soon("hash-table", "Hash Table", Advanced, Difficulty.Intermediate, "Buckets, hashing and collision handling.", "hash", 2),
-        Soon("graph-traversal", "BFS & DFS", Graphs, Difficulty.Intermediate, "Explore a graph level by level or deep first.", "graph", 2),
-        Soon("dijkstra", "Dijkstra's Algorithm", Graphs, Difficulty.Advanced, "Shortest paths with a priority queue.", "graph", 2),
-        Soon("mst", "Minimum Spanning Tree", Graphs, Difficulty.Advanced, "Kruskal and Prim connect everything cheaply.", "graph", 2),
-        Soon("recursion-tree", "Recursion Tree", Advanced, Difficulty.Intermediate, "See every call a recursive function makes.", "tree", 2),
+        new("bst", "Binary Search Tree", Trees, Difficulty.Intermediate,
+            "Insert, search, delete and traverse an ordered tree.",
+            "In a binary search tree every node's left subtree holds smaller keys and its right subtree larger keys. Each comparison therefore discards a whole subtree, so a balanced tree answers lookups in O(log n). This tree is not self-balancing: insert keys in sorted order and watch it degrade into a linked list.",
+            ["Left < node < right holds at every node.", "Height decides the cost: O(log n) balanced, O(n) degenerate.", "Deleting a node with two children copies in its in-order successor.", "In-order traversal visits keys in sorted order."],
+            [
+                new("insert", "Insert", "bst-insert", "Walk down from the root and attach a new leaf.", new("O(log n)", "O(log n)", "O(n)", "O(1)", "Iterative, so no recursion stack. Worst case: a degenerate (list-like) tree."), [Value with { Default = 35 }]),
+                new("search", "Search", "bst-search", "Follow left/right links by comparing keys.", new("O(1)", "O(log n)", "O(n)", "O(1)", "Best case: the key is at the root."), [Value with { Default = 60 }]),
+                new("delete", "Delete", "bst-delete", "Remove a key, handling 0, 1 or 2 children.", new("O(log n)", "O(log n)", "O(n)", "O(h)", "Recursive: space is the tree height h."), [Value with { Default = 30 }]),
+                new("inorder", "In-order", "bst-inorder", "Visit left subtree, node, right subtree.", new("O(n)", "O(n)", "O(n)", "O(h)", "Every node is visited once; recursion depth is the height."), []),
+            ],
+            new(0, 15, 0, 99, [50, 30, 70, 20, 40, 60, 80]),
+            "tree", v => new BstSession(v), Phase: 2),
+
+        new("binary-heap", "Binary Heap", Trees, Difficulty.Intermediate,
+            "A min-priority queue stored in a plain array.",
+            "A binary min-heap is a complete binary tree where every parent is ≤ its children, so the minimum is always at the root. Because the tree is complete, it fits in an array with no pointers: the children of index i are at 2i + 1 and 2i + 2. .NET's PriorityQueue<TElement, TPriority> is built on the same idea.",
+            ["Parent ≤ children at every node (heap property).", "Insert: add as the last leaf, then sift up.", "ExtractMin: move the last leaf to the root, then sift down.", "Both views below show the same array."],
+            [
+                new("insert", "Insert", "heap-insert", "Add a value and sift it up.", new("O(1)", "O(1)", "O(log n)", "O(1)", "On average a new value only rises a level or two."), [Value with { Default = 5 }]),
+                new("extract", "Extract Min", "heap-extract", "Remove the root and restore the heap.", new("O(log n)", "O(log n)", "O(log n)", "O(1)", "Sift-down walks one root-to-leaf path."), []),
+                new("peek", "Peek", "heap-peek", "Read the minimum.", new("O(1)", "O(1)", "O(1)", "O(1)", "It's always items[0]."), []),
+            ],
+            new(0, 15, 0, 99, [12, 25, 18, 40, 31, 22, 30, 47]),
+            "heap", v => new HeapSession(v, 15), Phase: 2),
+
+        new("hash-table", "Hash Table", Advanced, Difficulty.Intermediate,
+            "Hashing into buckets with separate chaining.",
+            "A hash table turns a key into a bucket index with a hash function, here key % 7. Lookups jump straight to one bucket instead of searching everything. Different keys can land in the same bucket (a collision), so each bucket holds a small linked chain. As long as chains stay short, insert, search and delete take O(1) on average. HashSet<T> and Dictionary<TKey, TValue> work this way.",
+            ["hash(key) = key % buckets picks the bucket in O(1).", "Collisions are chained in a linked list.", "Load factor = count / buckets; real tables resize when it grows.", "Worst case O(n): every key in one bucket."],
+            [
+                new("insert", "Insert", "hash-insert", "Hash the key and prepend it to its chain.", new("O(1)", "O(1)", "O(n)", "O(1)", "Checks the chain for duplicates first."), [Value with { Default = 24, Min = 0 }]),
+                new("search", "Search", "hash-search", "Hash the key and scan only its chain.", new("O(1)", "O(1)", "O(n)", "O(1)", "Average cost depends on the load factor."), [Value with { Default = 17, Min = 0 }]),
+                new("delete", "Delete", "hash-delete", "Unlink the key from its chain.", new("O(1)", "O(1)", "O(n)", "O(1)", ""), [Value with { Default = 10, Min = 0 }]),
+            ],
+            new(0, 20, 0, 99, [10, 3, 17, 22, 31, 8, 45, 15]),
+            "hash", v => new HashSession(v, 7), Phase: 2),
+
+        new("graph-traversal", "Graph & BFS / DFS", Graphs, Difficulty.Intermediate,
+            "Adjacency lists, breadth-first and depth-first search.",
+            "A graph is a set of vertices joined by edges. Here it is stored as adjacency lists: each vertex keeps a list of (neighbour, weight) pairs. BFS explores level by level using a queue, so it finds paths with the fewest edges. DFS dives as deep as possible using recursion (the call stack) and backtracks.",
+            ["Adjacency lists use O(V + E) memory.", "BFS uses a queue; DFS uses recursion, i.e. a stack.", "Both mark vertices visited so cycles don't loop forever.", "Green edges show the traversal tree."],
+            [
+                new("bfs", "BFS", "bfs", "Breadth-first search from a start vertex.", new("O(V + E)", "O(V + E)", "O(V + E)", "O(V)", "Each vertex is enqueued once; each edge is checked twice."), [Start]),
+                new("dfs", "DFS", "dfs", "Depth-first search from a start vertex.", new("O(V + E)", "O(V + E)", "O(V + E)", "O(V)", "Space is the recursion depth."), [Start]),
+                new("neighbors", "Adjacency", "graph-neighbors", "List a vertex's neighbours from its adjacency list.", new("O(deg)", "O(deg)", "O(deg)", "O(deg)", "Only the vertex's own list is scanned."), [Start]),
+            ],
+            GraphInput, "graph", null, Phase: 2) { CreateFromText = t => new GraphSession(Graph.Parse(t)) },
+
+        new("dijkstra", "Dijkstra's Algorithm", Graphs, Difficulty.Advanced,
+            "Shortest paths from one source with a priority queue.",
+            "Dijkstra's algorithm finds the cheapest path from a source to every vertex when all edge weights are non-negative. It repeatedly settles the closest unsettled vertex (taken from a min-priority queue) and relaxes its edges: if going through it is cheaper, the neighbour's distance is lowered. Numbers under each vertex are the current best distances.",
+            ["Requires non-negative weights.", "Once a vertex is dequeued, its distance is final.", "Stale queue entries are skipped instead of decreased.", "Green edges form the shortest-path tree."],
+            [new("dijkstra", "Dijkstra", "dijkstra", "Compute shortest distances from the source.", new("O((V+E) log V)", "O((V+E) log V)", "O((V+E) log V)", "O(V + E)", "Using .NET's binary-heap PriorityQueue."), [Start with { Label = "Source" }])],
+            GraphInput, "graph", null, Phase: 2) { CreateFromText = t => new GraphSession(Graph.Parse(t)) },
+
+        new("mst", "Minimum Spanning Tree", Graphs, Difficulty.Advanced,
+            "Kruskal and Prim connect every vertex as cheaply as possible.",
+            "A minimum spanning tree connects all vertices using V − 1 edges with the smallest total weight. Kruskal sorts all edges and adds each one that doesn't create a cycle, using union–find to check. Prim grows a single tree from a start vertex, always adding the cheapest edge that leaves it. Both are greedy and both are optimal.",
+            ["A spanning tree has exactly V − 1 edges and no cycles.", "Kruskal: global cheapest edge, skip cycles (union–find).", "Prim: cheapest edge leaving the current tree.", "Faded edges were rejected."],
+            [
+                new("kruskal", "Kruskal", "kruskal", "Add edges lightest-first, skipping cycles.", new("O(E log E)", "O(E log E)", "O(E log E)", "O(V)", "Dominated by sorting the edges."), []),
+                new("prim", "Prim", "prim", "Grow the tree from a start vertex.", new("O(E log V)", "O(E log V)", "O(E log V)", "O(E)", "Lazy version: the queue may hold stale edges."), [Start]),
+            ],
+            GraphInput, "graph", null, Phase: 2) { CreateFromText = t => new GraphSession(Graph.Parse(t)) },
+
+        new("recursion-tree", "Recursion Tree", Advanced, Difficulty.Intermediate,
+            "Watch every call a recursive function makes.",
+            "A recursive function solves a problem by calling itself on smaller inputs until it reaches a base case. Drawing every call as a node shows the true cost: naive Fibonacci recomputes the same subproblems over and over (exponential), memoization caches them (linear), and factorial makes a single chain of calls.",
+            ["Every call needs a base case to stop.", "Blue = executing, outlined = waiting on the call stack, green = returned.", "Naive fib(n) makes O(2ⁿ) calls.", "Memoized results (teal) cut the tree down to O(n)."],
+            [
+                new("fib", "Fibonacci", "fib", "Naive recursive Fibonacci.", new("O(2ⁿ)", "O(2ⁿ)", "O(2ⁿ)", "O(n)", "Space is the maximum call-stack depth."), [new("n", "n (0–6)", 5, 0, 6)]),
+                new("fib-memo", "Memoized", "fib-memo", "Fibonacci with a memo dictionary.", new("O(n)", "O(n)", "O(n)", "O(n)", "Each fib(k) is computed once; repeats hit the cache."), [new("n", "n (0–10)", 6, 0, 10)]),
+                new("factorial", "Factorial", "factorial", "n! = n × (n − 1)!", new("O(n)", "O(n)", "O(n)", "O(n)", "A single chain of n calls."), [new("n", "n (0–8)", 5, 0, 8)]),
+            ],
+            new(0, 0, 0, 0, []) { Kind = InputKind.None },
+            "tree", _ => new RecursionSession(), Phase: 2),
         Soon("segment-tree", "Segment Tree", Trees, Difficulty.Advanced, "Range queries and updates in O(log n).", "tree", 3),
         Soon("union-find", "Union-Find", Advanced, Difficulty.Advanced, "Disjoint sets with path compression.", "graph", 3),
         Soon("dynamic-programming", "Dynamic Programming", Advanced, Difficulty.Advanced, "Fill a table of overlapping subproblems.", "hash", 3),

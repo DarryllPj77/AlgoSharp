@@ -26,6 +26,7 @@ internal static class SessionHelpers
 public sealed class SortSession(int[] input, Action<int[], ArrayTracer> sort) : IVisualizerSession
 {
     public int[] Values { get; } = input;
+    public bool Persistent => false;
 
     public Step Snapshot(string message) => new ArrayTracer(ArrayLayout.Bars, Values.Length, Values).Snapshot(message);
 
@@ -43,6 +44,7 @@ public sealed class SortSession(int[] input, Action<int[], ArrayTracer> sort) : 
 public sealed class SearchSession(int[] input, Func<int[], int, ArrayTracer, int> search) : IVisualizerSession
 {
     public int[] Values { get; } = input;
+    public bool Persistent => false;
 
     public Step Snapshot(string message) => new ArrayTracer(ArrayLayout.Cells, Values.Length, Values).Snapshot(message);
 
@@ -164,5 +166,142 @@ public sealed class LinkedListSession(int[] input) : IVisualizerSession
     {
         list.InsertAt(index, value);
         return $"Inserted {value} at position {index}.";
+    }
+}
+
+public sealed class BstSession(int[] input) : IVisualizerSession
+{
+    private readonly BinarySearchTree tree = new(input);
+
+    public int[] Values => [.. tree.Keys()];
+
+    public Step Snapshot(string message) => tree.T.Snapshot(message);
+
+    public OperationResult Run(string operation, IReadOnlyDictionary<string, int> args)
+    {
+        tree.T.BeginOperation();
+        int value = args.Arg("value");
+        return SessionHelpers.Execute(() => tree.T.Steps, () => operation switch
+        {
+            "insert" when tree.Count >= 15 && !tree.Keys().Contains(value) => throw new InvalidOperationException("This visualizer keeps trees at 15 keys or fewer."),
+            "insert" => tree.Insert(value) ? $"Inserted {value}. Height = {tree.Height()}." : $"{value} was already present.",
+            "search" => tree.Contains(value) ? $"Found {value}." : $"{value} not found.",
+            "delete" => Delete(value),
+            "inorder" => $"In-order: [{string.Join(", ", tree.InOrder())}].",
+            _ => throw new ArgumentException($"Unknown operation {operation}"),
+        });
+    }
+
+    private string Delete(int value)
+    {
+        bool had = tree.Keys().Contains(value);
+        tree.Delete(value);
+        return had ? $"Deleted {value}. Height = {tree.Height()}." : $"{value} was not in the tree.";
+    }
+}
+
+public sealed class HeapSession(int[] input, int capacity) : IVisualizerSession
+{
+    private readonly MinHeap heap = new(capacity, input);
+
+    public int[] Values => heap.ToArray();
+
+    public Step Snapshot(string message) => WithTree(heap.T.Snapshot(message));
+
+    public OperationResult Run(string operation, IReadOnlyDictionary<string, int> args)
+    {
+        heap.T.BeginOperation();
+        var result = SessionHelpers.Execute(() => heap.T.Steps, () => operation switch
+        {
+            "insert" => Insert(args.Arg("value")),
+            "extract" => $"ExtractMin() returned {heap.ExtractMin()}.",
+            "peek" => $"Peek() returned {heap.Peek()}.",
+            _ => throw new ArgumentException($"Unknown operation {operation}"),
+        });
+        return result with { Steps = result.Steps.Select(WithTree).ToList() };
+    }
+
+    private string Insert(int value)
+    {
+        heap.Insert(value);
+        return $"Inserted {value}. Size = {heap.Count}.";
+    }
+
+    /// <summary>The array is the real storage; the tree view is derived from the same cells.</summary>
+    private static Step WithTree(Step s) => s.Array is null ? s : s with { Graph = TreeLayout.HeapTree(s.Array) };
+}
+
+public sealed class HashSession(int[] input, int buckets) : IVisualizerSession
+{
+    private readonly HashTable table = new(buckets, input);
+
+    public int[] Values => Enumerable.Range(0, table.BucketCount).SelectMany(b => table.Chain(b).AsEnumerable().Reverse()).ToArray();
+
+    public Step Snapshot(string message) => table.T.Snapshot(message);
+
+    public OperationResult Run(string operation, IReadOnlyDictionary<string, int> args)
+    {
+        table.T.BeginOperation();
+        int key = args.Arg("value");
+        return SessionHelpers.Execute(() => table.T.Steps, () => operation switch
+        {
+            "insert" when table.Count >= 30 => throw new InvalidOperationException("This visualizer keeps at most 30 keys."),
+            "insert" => table.Insert(key) ? $"Inserted {key}. Load factor = {(double)table.Count / table.BucketCount:0.00}." : $"{key} was already present.",
+            "search" => table.Contains(key) ? $"Found {key}." : $"{key} not found.",
+            "delete" => table.Remove(key) ? $"Removed {key}." : $"{key} was not present.",
+            _ => throw new ArgumentException($"Unknown operation {operation}"),
+        });
+    }
+}
+
+public sealed class GraphSession(Graph graph) : IVisualizerSession
+{
+    public int[] Values => [];
+    public bool Persistent => false;
+    public string Text => graph.ToText();
+    public IReadOnlyList<string> Vertices => Enumerable.Range(0, graph.VertexCount).Select(Graph.Name).ToList();
+
+    public Step Snapshot(string message) => new GraphTracer(graph.Scene).Snapshot(message);
+
+    public OperationResult Run(string operation, IReadOnlyDictionary<string, int> args)
+    {
+        var tracer = new GraphTracer(graph.Scene);
+        int start = Math.Clamp(args.Arg("start"), 0, graph.VertexCount - 1);
+        string summary = operation switch
+        {
+            "neighbors" => $"Neighbors({Graph.Name(start)}) = {graph.Names(GraphAlgorithms.Neighbors(graph, start, tracer))}.",
+            "bfs" => $"BFS from {Graph.Name(start)}: {graph.Names(GraphAlgorithms.Bfs(graph, start, tracer))}.",
+            "dfs" => $"DFS from {Graph.Name(start)}: {graph.Names(GraphAlgorithms.Dfs(graph, start, tracer))}.",
+            "dijkstra" => Distances(GraphAlgorithms.Dijkstra(graph, start, tracer)),
+            "kruskal" => $"Kruskal MST weight = {GraphAlgorithms.Kruskal(graph, tracer).Sum(e => e.W)}.",
+            "prim" => $"Prim MST weight = {GraphAlgorithms.Prim(graph, start, tracer).Sum(e => e.W)}.",
+            _ => throw new ArgumentException($"Unknown operation {operation}"),
+        };
+        return new OperationResult(tracer.Steps, summary, false);
+    }
+
+    private static string Distances(int[] dist) =>
+        "Distances: " + string.Join(", ", dist.Select((d, v) => $"{Graph.Name(v)}={(d == int.MaxValue ? "∞" : d.ToString())}"));
+}
+
+public sealed class RecursionSession : IVisualizerSession
+{
+    public int[] Values => [];
+    public bool Persistent => false;
+
+    public Step Snapshot(string message) => new CallTreeTracer().Snapshot(message);
+
+    public OperationResult Run(string operation, IReadOnlyDictionary<string, int> args)
+    {
+        var tracer = new CallTreeTracer();
+        int n = args.Arg("n");
+        string summary = operation switch
+        {
+            "fib" => $"fib({n}) = {Recursion.Fib(n, tracer)} using {tracer.Calls} calls.",
+            "fib-memo" => $"fib({n}) = {Recursion.FibMemo(n, tracer)} using only {tracer.Calls} calls.",
+            "factorial" => $"{n}! = {Recursion.Factorial(n, tracer)} using {tracer.Calls} calls.",
+            _ => throw new ArgumentException($"Unknown operation {operation}"),
+        };
+        return new OperationResult(tracer.Steps, summary, false);
     }
 }

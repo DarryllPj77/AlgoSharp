@@ -1,0 +1,72 @@
+@using System.Globalization
+@* Renders a GraphFrame (trees, heaps, hash tables, graphs, call trees). Coordinates are logical
+   units on a 100-wide canvas, scaled with the container; keyed elements + CSS transitions
+   animate nodes moving and edges re-targeting. *@
+
+<div class="gv">
+    <div class="gv-area" style="--h:@F(Frame.Height)">
+        @foreach (var e in Frame.Edges)
+        {
+            if (!nodes.TryGetValue(e.From, out var a) || !nodes.TryGetValue(e.To, out var b)) continue;
+            double dx = b.X - a.X, dy = b.Y - a.Y;
+            double dist = Math.Sqrt(dx * dx + dy * dy);
+            double end = e.Directed ? HalfSize(b.Shape, dx, dy) + 0.6 : 0;
+            double len = Math.Max(0, dist - end);
+            double angle = Math.Atan2(dy, dx) * 180 / Math.PI;
+            <div @key="e.Id" class="gv-edge s-@State(e.State) @(e.Directed ? "dir" : "")"
+                 style="--x:@F(a.X);--y:@F(a.Y);--len:@F(len);--a:@F(angle)deg"></div>
+            @if (e.Label is not null)
+            {
+                <div @key="@(e.Id + ":w")" class="gv-weight s-@State(e.State)" style="--x:@F(a.X + dx / 2);--y:@F(a.Y + dy / 2)">@e.Label</div>
+            }
+        }
+
+        @foreach (var n in Frame.Nodes)
+        {
+            <div @key="n.Id" class="gv-node shape-@n.Shape.ToString().ToLowerInvariant() s-@State(n.State)" style="--x:@F(n.X);--y:@F(n.Y)">
+                <span class="lbl">@n.Label</span>
+                @if (n.Badge is not null)
+                {
+                    <small class="gv-badge">@n.Badge</small>
+                }
+            </div>
+        }
+
+        @foreach (var p in Frame.Pointers)
+        {
+            if (!nodes.TryGetValue(p.NodeId, out var n)) continue;
+            <div @key="@("p:" + p.Name)" class="gv-ptr @ArrayCanvas.PointerClass(p.Name)" style="--x:@F(n.X);--y:@F(n.Y - TopOffset(n.Shape) - p.Stack * 3.6)">
+                <span>@p.Name</span>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public GraphFrame Frame { get; set; } = default!;
+
+    private readonly Dictionary<string, GNode> nodes = [];
+
+    protected override void OnParametersSet()
+    {
+        nodes.Clear();
+        foreach (var n in Frame.Nodes) nodes[n.Id] = n;
+    }
+
+    private static string State(CellState s) => s.ToString().ToLowerInvariant();
+
+    private static string F(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private static double TopOffset(NodeShape shape) => shape switch { NodeShape.Call => 2.6, _ => 3.3 } + 1.2;
+
+    /// <summary>Distance from a node's centre to its edge along the incoming direction (logical units).</summary>
+    private static double HalfSize(NodeShape shape, double dx, double dy)
+    {
+        if (shape == NodeShape.Circle) return 3;
+        double hw = shape == NodeShape.Call ? 3.4 : 3.5, hh = shape == NodeShape.Call ? 2.3 : 3;
+        double ax = Math.Abs(dx), ay = Math.Abs(dy);
+        if (ax < 1e-6 && ay < 1e-6) return 0;
+        double scale = Math.Min(ax < 1e-6 ? double.MaxValue : hw / ax, ay < 1e-6 ? double.MaxValue : hh / ay);
+        return Math.Sqrt(dx * dx + dy * dy) * scale;
+    }
+}

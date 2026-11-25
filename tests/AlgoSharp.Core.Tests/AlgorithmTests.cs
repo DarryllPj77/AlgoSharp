@@ -183,13 +183,13 @@ public class CodeSyncTests
     [Fact]
     public void Every_recorded_step_points_at_a_displayed_line()
     {
-        var args = new Dictionary<string, int> { ["index"] = 1, ["value"] = 30, ["target"] = 33 };
+        var args = new Dictionary<string, int> { ["index"] = 1, ["value"] = 30, ["target"] = 33, ["start"] = 0, ["n"] = 4 };
         foreach (var def in AlgorithmCatalog.All.Where(a => a.Available))
         {
             foreach (var op in def.Operations)
             {
                 var region = CodeLibrary.Get(op.CodeId);
-                var session = def.CreateSession!(def.Input.Default);
+                var session = def.CreateFromText is { } fromText ? fromText(def.Input.DefaultText) : def.CreateSession!(def.Input.Default);
                 var result = session.Run(op.Key, args);
                 Assert.NotEmpty(result.Steps);
                 foreach (var step in result.Steps.Where(s => s.Label != ""))
@@ -208,6 +208,7 @@ public class CodeSyncTests
             var region = CodeLibrary.Get(id);
             Assert.DoesNotContain(region.Lines, l => l.TrimStart().StartsWith("T.", StringComparison.Ordinal));
             Assert.DoesNotContain(region.Lines, l => l.Contains("Tracer") || l.Contains("// #"));
+            Assert.DoesNotContain(region.Lines, l => System.Text.RegularExpressions.Regex.IsMatch(l, @"\bT\.|\bT\)"));
         }
         var bubble = CodeLibrary.Get("bubble-sort");
         Assert.Equal("public static void BubbleSort(int[] a)", bubble.Lines[0]);

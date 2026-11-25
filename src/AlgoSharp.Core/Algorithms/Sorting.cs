@@ -179,7 +179,7 @@ public static class Sorting
     {
         if (lo >= hi) // #base
         {
-            if (lo == hi) T.Mark(Sorted, lo);
+            T.MarkRange(Sorted, lo, hi);
             T.Range(lo, hi);
             T.At("base").Ptr("lo", lo).Ptr("hi", hi).V("lo", lo).V("hi", hi).Say(lo == hi ? $"A single value (a[{lo}] = {a[lo]}) is already in place." : "Empty range: nothing to sort.");
             return; // #return

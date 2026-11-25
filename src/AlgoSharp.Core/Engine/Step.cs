@@ -57,6 +57,23 @@ public sealed record ListFrame(
 
 public sealed record VarView(string Name, string Value);
 
+/// <summary>Node shapes understood by the graph renderer.</summary>
+public enum NodeShape { Circle, Slot, Call }
+
+/// <summary>A positioned node. Coordinates are logical units on a 100-wide canvas.</summary>
+public sealed record GNode(string Id, string Label, double X, double Y, NodeShape Shape, CellState State, string? Badge);
+
+public sealed record GEdge(string Id, string From, string To, string? Label, CellState State, bool Directed);
+
+public sealed record GPointer(string Name, string NodeId, int Stack);
+
+/// <summary>Trees, graphs, hash tables and call trees all render as positioned nodes plus edges.</summary>
+public sealed record GraphFrame(
+    double Height,
+    IReadOnlyList<GNode> Nodes,
+    IReadOnlyList<GEdge> Edges,
+    IReadOnlyList<GPointer> Pointers);
+
 /// <summary>
 /// One deterministic snapshot of an algorithm's execution. Steps are complete snapshots,
 /// so the UI can jump to any index (forwards or backwards) without replaying.
@@ -67,4 +84,5 @@ public sealed record Step(
     IReadOnlyList<VarView> Vars,
     ArrayFrame? Array = null,
     ListFrame? List = null,
-    bool IsError = false);
+    bool IsError = false,
+    GraphFrame? Graph = null);

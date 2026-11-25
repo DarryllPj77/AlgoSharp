@@ -17,6 +17,13 @@
         "quick-sort" => [("pivot", "Pivot"), ("compare", "Comparing"), ("swap", "Swapped"), ("sorted", "Pivot placed")],
         "linear-search" or "binary-search" => [("compare", "Checking"), ("visited", "Ruled out"), ("found", "Found")],
         "linked-list" => [("active", "Walking"), ("compare", "Comparing"), ("new", "New node"), ("removed", "Removed"), ("found", "Found")],
+        "bst" => [("compare", "Comparing"), ("active", "Path / parent"), ("new", "New / replaced"), ("removed", "Being deleted"), ("found", "Found / visited")],
+        "binary-heap" => [("compare", "Parent vs child"), ("swap", "Swapped"), ("min", "Smallest child"), ("new", "New value"), ("found", "Heap OK")],
+        "hash-table" => [("key", "Target bucket"), ("compare", "Comparing"), ("new", "Inserted"), ("removed", "Removed"), ("found", "Found")],
+        "graph-traversal" => [("key", "Current"), ("pivot", "Discovered"), ("sorted", "Finished / tree edge"), ("compare", "Checking")],
+        "dijkstra" => [("key", "Settling"), ("pivot", "In queue"), ("sorted", "Settled / path tree"), ("compare", "Relaxing")],
+        "mst" => [("compare", "Considering"), ("sorted", "In the MST"), ("visited", "Rejected (faded)")],
+        "recursion-tree" => [("key", "Current call"), ("active", "Waiting on stack"), ("sorted", "Returned"), ("found", "Memo hit")],
         _ => [("compare", "Checking"), ("swap", "Moved"), ("new", "Written"), ("removed", "Removed"), ("found", "Result")],
     };
 }
