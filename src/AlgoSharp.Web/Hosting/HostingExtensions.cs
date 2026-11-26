@@ -5,7 +5,6 @@ using System.Threading.RateLimiting;
 using AlgoSharp.Accounts;
 using AlgoSharp.Playground.Execution;
 using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
@@ -106,6 +105,18 @@ public static class HostingExtensions
                 o.KnownProxies.Add(IPAddress.Parse(ip));
             foreach (string cidr in section.GetSection("KnownNetworks").Get<string[]>() ?? [])
                 o.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(cidr));
+            // Platforms like Render front the app with proxies whose addresses aren't published. Trusting
+            // them is safe with ForwardLimit = 1: only the entry the platform's proxy appends is used, so a
+            // client-supplied X-Forwarded-For can't spoof its IP. Never enable this when the app is reachable
+            // without going through that proxy.
+            if (section.GetValue<bool>("TrustAllProxies"))
+            {
+                o.KnownProxies.Clear();
+                o.KnownIPNetworks.Clear();
+#pragma warning disable ASPDEPR005 // the legacy list still carries the loopback default
+                o.KnownNetworks.Clear();
+#pragma warning restore ASPDEPR005
+            }
         });
         return services;
     }
@@ -119,11 +130,16 @@ public static class HostingExtensions
     {
         // Sign-out is a POST with an antiforgery token (validated by UseAntiforgery for form posts),
         // so another site can't sign people out with a link or image.
-        app.MapPost("/account/logout", async (ClaimsPrincipal user, AccountService accounts, [FromForm] string? returnUrl) =>
+        app.MapPost("/account/logout", async (HttpContext ctx, AccountService accounts) =>
         {
-            if (user.Identity?.IsAuthenticated == true) await accounts.SignOutAsync();
-            return TypedResults.LocalRedirect(ReturnUrl.Safe(returnUrl));
-        });
+            // UseAntiforgery records the result; a missing or forged token is a plain 400, and the form
+            // is only read after the token checked out.
+            if (ctx.Features.Get<Microsoft.AspNetCore.Antiforgery.IAntiforgeryValidationFeature>() is not { IsValid: true })
+                return Results.Text("This sign-out request is missing its security token. Go back, reload the page and try again.", statusCode: StatusCodes.Status400BadRequest);
+            var form = await ctx.Request.ReadFormAsync();
+            if (ctx.User.Identity?.IsAuthenticated == true) await accounts.SignOutAsync();
+            return Results.LocalRedirect(ReturnUrl.Safe(form["returnUrl"]));
+        }).WithMetadata(new Microsoft.AspNetCore.Antiforgery.RequireAntiforgeryTokenAttribute());
     }
 }
 

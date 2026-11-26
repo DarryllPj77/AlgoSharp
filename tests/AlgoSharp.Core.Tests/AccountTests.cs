@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using AlgoSharp.Accounts;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
@@ -377,6 +378,73 @@ public sealed class AccountServiceTests : IDisposable
             var r = await accounts.RegisterAsync("ada", "ada@example.com", "correct-horse-1");
             Assert.Equal(AccountService.Unavailable, Assert.Single(r.Errors).Message);
         }
+    }
+
+    [Fact]
+    public void Production_cookie_setup_keeps_the_security_stamp_check()
+    {
+        // Regression: customizing cookie events must not drop Identity's OnValidatePrincipal, or a password
+        // change / "sign out everywhere" never reaches other devices.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Accounts:SessionRecheckSeconds"] = "60" }).Build();
+        services.AddAlgoSharpAccounts(config, new TestEnv { EnvironmentName = "Production" });
+        using var sp = services.BuildServiceProvider();
+
+        var cookie = sp.GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationOptions>>()
+            .Get(IdentityConstants.ApplicationScheme);
+        Assert.Equal(typeof(SecurityStampValidator), cookie.Events.OnValidatePrincipal.Method.DeclaringType);
+        Assert.Equal(Microsoft.AspNetCore.Http.CookieSecurePolicy.Always, cookie.Cookie.SecurePolicy);
+        Assert.True(cookie.Cookie.HttpOnly);
+        Assert.Equal(TimeSpan.FromSeconds(60), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SecurityStampValidatorOptions>>().Value.ValidationInterval);
+    }
+
+    [Fact]
+    public void Key_ring_is_encrypted_with_the_configured_certificate()
+    {
+        using var rsa = System.Security.Cryptography.RSA.Create(2048);
+        var request = new System.Security.Cryptography.X509Certificates.CertificateRequest("CN=AlgoSharp DP test", rsa,
+            System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+        using var cert = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+        string pfx = Convert.ToBase64String(cert.Export(System.Security.Cryptography.X509Certificates.X509ContentType.Pfx, "test-pass"));
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["DataProtection:Store"] = "Database",
+            ["DataProtection:CertificateBase64"] = pfx,
+            ["DataProtection:CertificatePassword"] = "test-pass",
+        }).Build();
+
+        ServiceProvider KeyRingServices(IConfiguration cfg)
+        {
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddDbContext<AppDbContext>(o => o.UseSqlite(connection));
+            AccountsSetup.ConfigureKeyRing(Microsoft.Extensions.DependencyInjection.DataProtectionServiceCollectionExtensions.AddDataProtection(services), cfg, databaseAvailable: true);
+            return services.BuildServiceProvider();
+        }
+
+        string token;
+        using (var sp = KeyRingServices(config))
+        {
+            token = sp.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>().CreateProtector("t").Protect("secret-cookie");
+        }
+
+        using (var scope = root.CreateScope())
+        {
+            string xml = scope.ServiceProvider.GetRequiredService<AppDbContext>().DataProtectionKeys.AsNoTracking().Single().Xml!;
+            Assert.Contains("EncryptedData", xml);
+            Assert.DoesNotContain("<masterKey", xml);
+        }
+
+        // A fresh app instance with the same certificate can read cookies issued earlier.
+        using (var sp = KeyRingServices(config))
+            Assert.Equal("secret-cookie", sp.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>().CreateProtector("t").Unprotect(token));
+
+        // Someone with only the database (no certificate) can't.
+        var noCert = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["DataProtection:Store"] = "Database" }).Build();
+        using (var sp = KeyRingServices(noCert))
+            Assert.ThrowsAny<System.Security.Cryptography.CryptographicException>(() =>
+                sp.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>().CreateProtector("t").Unprotect(token));
     }
 
     public void Dispose()

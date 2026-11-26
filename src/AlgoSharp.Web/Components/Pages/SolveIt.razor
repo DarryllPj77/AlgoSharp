@@ -197,7 +197,7 @@ else
                         }
                         else if (!compile.Diagnostics.Any())
                         {
-                            <p class="diag ok">✓ Compiles. Press Run &amp; visualize to run it in the sandbox.</p>
+                            <p class="diag ok">@(status?.Available == false ? "✓ Compiles. Running code isn't available here right now (see below)." : "✓ Compiles. Press Run & visualize to run it in the sandbox.")</p>
                         }
                         @foreach (var d in compile?.Diagnostics.Take(8) ?? [])
                         {

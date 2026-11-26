@@ -9,6 +9,8 @@ public sealed class SandboxOptions
 {
     /// <summary>"Docker" to run in containers, "Disabled" to turn execution off.</summary>
     public string Mode { get; set; } = "Docker";
+    /// <summary>Shown in place of Run when execution is disabled (e.g. hosts without an isolated sandbox).</summary>
+    public string? DisabledMessage { get; set; }
     public string DockerPath { get; set; } = "docker";
     public string Image { get; set; } = "algosharp-runner:1";
     public int TimeoutSeconds { get; set; } = 15;

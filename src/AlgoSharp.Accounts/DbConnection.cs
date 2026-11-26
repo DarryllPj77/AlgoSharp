@@ -21,6 +21,10 @@ public static class DbConnection
         if (!IsLocal(b.Host) && b.SslMode is SslMode.Disable or SslMode.Allow or SslMode.Prefer)
             b.SslMode = SslMode.Require;
 
+        // Neon and the local container don't use Kerberos; skipping the GSS probe avoids a native
+        // library lookup (absent in the runtime image) on every new connection.
+        b.GssEncryptionMode = GssEncryptionMode.Disable;
+
         // Neon suspends idle computes; give the first connection after a cold start time to wake it.
         if (b.Timeout < 15) b.Timeout = 15;
         return b.ConnectionString;

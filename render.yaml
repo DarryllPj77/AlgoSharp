@@ -1,0 +1,45 @@
+# Render Blueprint: AlgoSharp public beta (Blazor Server in Docker, accounts on Neon).
+# Render has no Docker engine for containers to use, so cloud code execution is disabled here
+# (Sandbox__Mode=Disabled): user code is never run on Render. Visualizers, Solve It editing and
+# compile feedback, the personal library and accounts all work.
+services:
+  - type: web
+    name: algosharp
+    runtime: docker
+    plan: free
+    region: singapore            # closest to the Neon database (aws-ap-southeast-1)
+    dockerfilePath: ./deploy/web.Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    autoDeploy: false            # deploy deliberately from the dashboard / CLI
+    envVars:
+      # Secret: set in the Render dashboard (Environment), never in this file.
+      - key: ConnectionStrings__AlgoSharp
+        sync: false
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: PORT                # Render routes traffic to this port
+        value: "8080"
+      - key: ASPNETCORE_HTTP_PORTS
+        value: "8080"
+      # Render terminates TLS and forwards X-Forwarded-For/Proto from proxies with unpublished IPs.
+      - key: ReverseProxy__Enabled
+        value: "true"
+      - key: ReverseProxy__TrustAllProxies
+        value: "true"
+      - key: HttpsRedirection
+        value: "true"
+      - key: ASPNETCORE_HTTPS_PORT
+        value: "443"
+      # No persistent disk on the free plan: keep the cookie/antiforgery key ring in Neon.
+      - key: DataProtection__Store
+        value: Database
+      # Secrets: the certificate that encrypts the key ring at rest, kept apart from the database.
+      - key: DataProtection__CertificateBase64
+        sync: false
+      - key: DataProtection__CertificatePassword
+        sync: false
+      - key: Sandbox__Mode
+        value: Disabled
+      - key: Sandbox__DisabledMessage
+        value: "Cloud code execution is temporarily unavailable on the AlgoSharp public beta: your code is only ever run in an isolated sandbox, and this server doesn't have one yet. You can still write, edit and compile your solution, and your draft is saved in this browser. To run and visualize code today, run AlgoSharp locally with Docker."
