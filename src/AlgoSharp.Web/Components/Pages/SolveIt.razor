@@ -7,6 +7,9 @@
 @inject PlaygroundService Service
 @inject LocalLibrary Library
 @inject NavigationManager Nav
+@inject Quotas RunQuotas
+@inject ICodeExecutor Executor
+@inject ILogger<SolveIt> Log
 
 @if (problem is null && Id is not null)
 {
@@ -544,6 +547,7 @@ else
     /// server (nothing is compiled, loaded, saved or run for anonymous visitors), not just hidden in the UI.
     /// </summary>
     private bool signedIn;
+    private string? accountId;
 
     private string ReturnPath => "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('#')[0];
     private string SignInHref => $"/account/login?returnUrl={Uri.EscapeDataString(ReturnPath)}";
@@ -599,7 +603,10 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        signedIn = AuthState is not null && (await AuthState).User.Identity?.IsAuthenticated == true;
+        var user = AuthState is null ? null : (await AuthState).User;
+        signedIn = user?.Identity?.IsAuthenticated == true;
+        accountId = signedIn ? user!.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value : null;
+        if (accountId is null) signedIn = false;
         if (Id is not null && !signedIn)
         {
             // Personal problems are only reachable through the [Authorize] page; refuse anything else.
@@ -830,7 +837,18 @@ else
         try
         {
             if (editor is not null) code = await editor.InvokeAsync<string>("getValue");
-            run = await Service.RunAsync(problem, code, cases);
+            // Per-account quota first; the remote executor gets an opaque id, never the account id.
+            using var lease = RunQuotas.TryAcquire(accountId!, out string? limited);
+            if (lease is null)
+            {
+                Log.LogInformation("audit event=run outcome=throttled-web account={Account}", accountId);
+                compile = PlaygroundService.Check(problem, code);
+                run = new PlaygroundRun(compile, limited, [], null);
+                return;
+            }
+            string caller = Executor is RemoteExecutor remote ? remote.CallerFor(accountId!) : accountId!;
+            run = await Service.RunAsync(problem, code, cases, caller);
+            Log.LogInformation("audit event=run outcome={Outcome} account={Account}", run.ExecutionError is null ? "executed" : "not-executed", accountId);
             compile = run.Compile;
             advice = run.Advice;
             await PushMarkers();

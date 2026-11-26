@@ -134,3 +134,40 @@ No CORS configuration is needed: the landing page only links to the app; it make
 - Not implemented yet (and not faked): email verification, password reset by email, two-factor
   authentication, per-device session lists. The account model (Identity tokens, security stamps)
   is ready for them once an email provider is configured.
+
+## Cloud code execution (separate executor service)
+
+```
+Signed-in user -> Render (web) --HTTPS + HMAC-signed request--> Executor VM (Caddy -> AlgoSharp.Executor)
+                                                                  -> one gVisor container per run (no network)
+```
+
+- **Render never runs code.** With `Sandbox__Mode=Remote` it compiles (Roslyn, no execution) and sends the
+  instrumented assembly to the executor. Each request is signed (HMAC-SHA256, shared key), timestamped and
+  single-use; the executor's answers are signed too, so neither side trusts anything else.
+- **Fail closed.** Run is offered only while the executor answers with a valid signature, says it's
+  available and its isolation self-test passed in the last 30 minutes (with `runsc` when
+  `Sandbox__Remote__RequireRuntime=runsc`). Otherwise users see "Cloud code execution is temporarily unavailable".
+- **Self-test.** Every 10 minutes the executor starts a container with the production flags and checks from
+  inside: uid 65534, no capabilities, read-only root, no network interfaces or DNS, no Docker socket, no
+  secrets in the environment.
+- **Limits.** Per account: 1 run at a time, 30 per 10 minutes, 300 per day (both on Render and on the
+  executor); 120 runs per minute overall; 15 s, 256 MB, 1 CPU, 64 processes, 2000 trace steps and 8000
+  output characters per run; 512 KB per request.
+- **Audit log** (executor stdout, JSON): opaque caller id, sizes, duration, outcome. Never code or results.
+  The executor never sees account ids or emails, and holds no database credentials.
+
+### Deploying the executor (one dedicated VM)
+
+1. Create a small Linux VM (Ubuntu 24.04) and open only ports 80 and 443.
+2. Install Docker, then `sudo sh deploy/executor/install-gvisor.sh`.
+3. `cp deploy/executor/.env.example deploy/executor/.env` and fill in `DOMAIN` (`<ip-with-dashes>.sslip.io`
+   works without buying a domain), `Executor__Key` (`openssl rand -base64 32`), Render's outbound IPs as
+   `Executor__AllowedNetworks__N`, and `DOCKER_GID`.
+4. `docker compose -f deploy/executor/docker-compose.yml --profile build build runner`, then
+   `docker compose -f deploy/executor/docker-compose.yml up -d --build`.
+5. Check the logs say `Isolation self-test passed (runtime runsc)`.
+6. On Render set `Sandbox__Remote__Url`, `Sandbox__Remote__Key` (same key), then `Sandbox__Mode=Remote`.
+
+The executor reaches the Docker engine through its socket (root-equivalent on that VM). That's why the VM
+runs nothing else, holds no secrets besides the shared key, and user containers run under gVisor.

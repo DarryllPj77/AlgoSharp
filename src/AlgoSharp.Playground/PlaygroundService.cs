@@ -35,12 +35,16 @@ public sealed class PlaygroundService(ICodeExecutor executor, SandboxOptions opt
             maxOutput,
             problem.Entry.DesignClass is null ? null : compile.MethodName);
 
-    public async Task<PlaygroundRun> RunAsync(PlaygroundProblem problem, string code, IReadOnlyList<PlaygroundCase> cases, CancellationToken ct = default)
+    /// <param name="caller">Opaque per-account id; executors with per-account quotas require it.</param>
+    public async Task<PlaygroundRun> RunAsync(PlaygroundProblem problem, string code, IReadOnlyList<PlaygroundCase> cases, string? caller = null, CancellationToken ct = default)
     {
         var compile = CodeCompiler.Compile(code, problem.Entry);
         if (!compile.Success) return new(compile, null, [], null);
 
-        var sandbox = await executor.RunAsync(BuildRequest(problem, compile, cases, options.MaxEvents, options.MaxOutputChars), ct);
+        var request = BuildRequest(problem, compile, cases, options.MaxEvents, options.MaxOutputChars);
+        var sandbox = executor is ICallerAwareExecutor perCaller && caller is not null
+            ? await perCaller.RunAsync(request, caller, ct)
+            : await executor.RunAsync(request, ct);
         if (!sandbox.Ok || sandbox.Response is null) return new(compile, sandbox.Error ?? "Execution failed.", [], Advise(problem, compile, []));
         if (!sandbox.Response.Ok) return new(compile, sandbox.Response.Error, [], Advise(problem, compile, []));
         return Interpret(problem, compile, code, cases, sandbox.Response);

@@ -1,0 +1,69 @@
+# The AlgoSharp code-execution host (a dedicated VM: nothing else runs here).
+#   Caddy (HTTPS, only ports 80/443 open) -> executor (signed requests only) -> gVisor runner containers
+#
+#   cp deploy/executor/.env.example deploy/executor/.env      # fill in; never commit
+#   sudo sh deploy/executor/install-gvisor.sh                  # once per VM
+#   docker compose -f deploy/executor/docker-compose.yml --profile build build runner
+#   docker compose -f deploy/executor/docker-compose.yml up -d --build
+#
+# This host has no database credentials and stores no user data.
+name: algosharp-executor
+
+services:
+  executor:
+    build:
+      context: ../..
+      dockerfile: deploy/executor/executor.Dockerfile
+    image: algosharp-executor:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Sandbox__Runtime: runsc            # gVisor for every user container; Docker refuses if missing
+      Sandbox__Image: algosharp-runner:1
+      Executor__TrustedProxyNetworks__0: 172.31.250.0/24   # the edge network below (Caddy)
+    # The executor needs the Docker engine to start sandbox containers. User code never gets it:
+    # sandbox containers have no volumes, no network and run under gVisor.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-999}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    expose: ["8080"]
+    networks: [edge]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in deploy/executor/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [edge]
+    depends_on: [executor]
+
+  # Builds algosharp-runner:1 (the image user code runs in). Never started as a service.
+  runner:
+    build:
+      context: ../..
+      dockerfile: deploy/runner.Dockerfile
+    image: algosharp-runner:1
+    profiles: ["build"]
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
+
+volumes:
+  caddy-data:
+  caddy-config:

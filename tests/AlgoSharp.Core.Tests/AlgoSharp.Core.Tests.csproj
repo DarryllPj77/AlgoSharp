@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\AlgoSharp.Playground\AlgoSharp.Playground.csproj" />
     <ProjectReference Include="..\..\src\AlgoSharp.Runner\AlgoSharp.Runner.csproj" />
     <ProjectReference Include="..\..\src\AlgoSharp.Accounts\AlgoSharp.Accounts.csproj" />
+    <ProjectReference Include="..\..\src\AlgoSharp.Executor\AlgoSharp.Executor.csproj" />
   </ItemGroup>
 
 </Project>

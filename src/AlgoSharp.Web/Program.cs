@@ -23,9 +23,20 @@ builder.Services.AddRazorComponents()
 // inside an isolated Docker container; without Docker, execution is disabled.
 var sandbox = builder.Configuration.GetSection("Sandbox").Get<SandboxOptions>() ?? new SandboxOptions();
 builder.Services.AddSingleton(sandbox);
-builder.Services.AddSingleton<ICodeExecutor>(_ => sandbox.Mode.Equals("Docker", StringComparison.OrdinalIgnoreCase)
-    ? new DockerExecutor(sandbox)
-    : new DisabledExecutor(sandbox.DisabledMessage ?? "Code execution is turned off in this deployment (Sandbox:Mode is not \"Docker\")."));
+// Docker: local containers (development). Remote: the separate AlgoSharp.Executor service, used only while
+// it proves (signed status + passing isolation self-test) that it's available. Anything else: disabled.
+builder.Services.AddSingleton<ICodeExecutor>(sp => sandbox.Mode.ToLowerInvariant() switch
+{
+    "docker" => new DockerExecutor(sandbox),
+    "remote" => new RemoteExecutor(sandbox.Remote,
+        new HttpClient(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5), AllowAutoRedirect = false }),
+        message => sp.GetRequiredService<ILogger<RemoteExecutor>>().LogWarning("{Message}", message)),
+    _ => new DisabledExecutor(sandbox.DisabledMessage ?? "Code execution is turned off in this deployment (Sandbox:Mode is not \"Docker\")."),
+});
+// Per-account limits applied before any run leaves this server (the executor enforces its own too).
+builder.Services.AddSingleton(new Quotas(
+    builder.Configuration.GetSection("Execution:Limits").Get<QuotaLimits>() ?? new QuotaLimits(PerCallerPer10Minutes: 30, PerCallerPerDay: 300, PerCallerConcurrent: 1, GlobalPerMinute: 120),
+    TimeProvider.System));
 builder.Services.AddSingleton<PlaygroundService>();
 builder.Services.AddScoped<AlgoSharp.Web.Services.LocalLibrary>();
 

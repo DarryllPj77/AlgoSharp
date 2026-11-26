@@ -1,0 +1,16 @@
+# TLS in front of the executor. Only the two API routes and the liveness probe are forwarded.
+{$DOMAIN} {
+	@api path /v1/status /v1/run /healthz
+	handle @api {
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy executor:8080 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle {
+		respond 404
+	}
+	header -Server
+}

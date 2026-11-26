@@ -39,7 +39,16 @@ services:
         sync: false
       - key: DataProtection__CertificatePassword
         sync: false
+      # Disabled until the separate executor service (deploy/executor) is running. Switching to Remote
+      # still only enables Run while that service answers with a valid signature and a passing
+      # gVisor isolation self-test; otherwise Run stays off with the message below.
       - key: Sandbox__Mode
         value: Disabled
+      - key: Sandbox__Remote__Url          # e.g. https://<vm-ip-with-dashes>.sslip.io
+        sync: false
+      - key: Sandbox__Remote__Key          # same secret as Executor__Key on the executor VM
+        sync: false
+      - key: Sandbox__Remote__RequireRuntime
+        value: runsc
       - key: Sandbox__DisabledMessage
         value: "Cloud code execution is temporarily unavailable on the AlgoSharp public beta: your code is only ever run in an isolated sandbox, and this server doesn't have one yet. You can still write, edit and compile your solution, and your draft is saved in this browser. To run and visualize code today, run AlgoSharp locally with Docker."

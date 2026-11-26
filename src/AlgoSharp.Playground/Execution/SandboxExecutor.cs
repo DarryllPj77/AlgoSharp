@@ -7,8 +7,14 @@ namespace AlgoSharp.Playground.Execution;
 
 public sealed class SandboxOptions
 {
-    /// <summary>"Docker" to run in containers, "Disabled" to turn execution off.</summary>
+    /// <summary>"Docker" (local containers), "Remote" (the separate AlgoSharp.Executor service) or "Disabled".</summary>
     public string Mode { get; set; } = "Docker";
+    /// <summary>
+    /// Optional OCI runtime for user containers, e.g. "runsc" (gVisor: a user-space kernel between the
+    /// code and the host). Docker refuses to start the container if the runtime isn't installed.
+    /// </summary>
+    public string? Runtime { get; set; }
+    public RemoteSandboxOptions Remote { get; set; } = new();
     /// <summary>Shown in place of Run when execution is disabled (e.g. hosts without an isolated sandbox).</summary>
     public string? DisabledMessage { get; set; }
     public string DockerPath { get; set; } = "docker";
@@ -23,7 +29,17 @@ public sealed class SandboxOptions
     public int MaxResponseBytes { get; set; } = 8 * 1024 * 1024;
 }
 
-public sealed record SandboxStatus(bool Available, string Message);
+public sealed record SandboxStatus(bool Available, string Message)
+{
+    /// <summary>Result of the last isolation self-test, when the executor runs one.</summary>
+    public IsolationReport? Isolation { get; init; }
+}
+
+/// <summary>
+/// What the isolation self-test observed from inside a sandbox container started with the exact
+/// production flags. <see cref="Passed"/> is true only if every check matched the expected value.
+/// </summary>
+public sealed record IsolationReport(bool Passed, string Runtime, DateTimeOffset CheckedAt, IReadOnlyDictionary<string, string> Checks, string? Failure);
 
 public sealed record SandboxResult(bool Ok, string? Error, RunResponse? Response);
 
@@ -32,6 +48,12 @@ public interface ICodeExecutor
 {
     Task<SandboxStatus> GetStatusAsync(CancellationToken ct = default);
     Task<SandboxResult> RunAsync(RunRequest request, CancellationToken ct = default);
+}
+
+/// <summary>An executor that applies per-caller quotas; <c>caller</c> is an opaque, non-reversible key.</summary>
+public interface ICallerAwareExecutor : ICodeExecutor
+{
+    Task<SandboxResult> RunAsync(RunRequest request, string caller, CancellationToken ct = default);
 }
 
 /// <summary>Used when no isolation is configured. It never runs code.</summary>
@@ -83,21 +105,10 @@ public sealed class DockerExecutor(SandboxOptions options) : ICodeExecutor
         var status = await GetStatusAsync(ct);
         if (!status.Available) return new(false, status.Message, null);
         if (!await slots.WaitAsync(TimeSpan.FromSeconds(10), ct)) return new(false, "The sandbox is busy. Try again in a moment.", null);
-        string name = "algosharp-run-" + Guid.NewGuid().ToString("N")[..12];
+        string name = ContainerPrefix + Guid.NewGuid().ToString("N")[..12];
         try
         {
-            string[] args =
-            [
-                "run", "--rm", "-i", "--name", name,
-                "--network", "none",
-                "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m",
-                "--memory", options.Memory, "--memory-swap", options.Memory,
-                "--cpus", options.Cpus, "--pids-limit", options.PidsLimit.ToString(),
-                "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-                "--user", "65534:65534",
-                "--ulimit", "nofile=64:64",
-                options.Image,
-            ];
+            string[] args = [.. HardeningArgs(options, name), options.Image];
             byte[] payload = JsonSerializer.SerializeToUtf8Bytes(request, TraceJson.Options);
             var (code, stdout, stderr, timedOut) = await RunProcessAsync(args, payload, TimeSpan.FromSeconds(options.TimeoutSeconds), options.MaxResponseBytes, ct);
             if (timedOut)
@@ -126,11 +137,116 @@ public sealed class DockerExecutor(SandboxOptions options) : ICodeExecutor
         }
     }
 
+    public const string ContainerPrefix = "algosharp-run-";
+
+    /// <summary>
+    /// The one set of flags every user container gets (runs and self-tests alike): disposable (--rm), no
+    /// network, read-only root, non-root user, no capabilities, no privilege escalation, memory/CPU/
+    /// process/file limits, and the hardened runtime when configured. No volumes, no env, no socket.
+    /// </summary>
+    public static List<string> HardeningArgs(SandboxOptions options, string name)
+    {
+        List<string> args =
+        [
+            "run", "--rm", "-i", "--name", name,
+            "--network", "none",
+            "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m",
+            "--memory", options.Memory, "--memory-swap", options.Memory,
+            "--cpus", options.Cpus, "--pids-limit", options.PidsLimit.ToString(),
+            "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+            "--user", "65534:65534",
+            "--ulimit", "nofile=64:64",
+        ];
+        if (!string.IsNullOrWhiteSpace(options.Runtime)) args.AddRange(["--runtime", options.Runtime]);
+        return args;
+    }
+
+    private const string ProbeScript =
+        "echo uid=$(id -u); " +
+        "echo cap=$(grep CapEff /proc/self/status | tr -d ' \\t' | cut -d: -f2); " +
+        "if touch /app/.probe 2>/dev/null; then echo rootfs=writable; else echo rootfs=readonly; fi; " +
+        "if touch /tmp/.probe 2>/dev/null; then echo tmp=writable; else echo tmp=readonly; fi; " +
+        "echo ifaces=$(ls /sys/class/net 2>/dev/null | grep -v '^lo$' | tr '\\n' ' '); " +
+        "if getent hosts example.com >/dev/null 2>&1; then echo dns=resolves; else echo dns=blocked; fi; " +
+        "if [ -e /var/run/docker.sock ] || [ -e /run/docker.sock ]; then echo docker_sock=present; else echo docker_sock=absent; fi; " +
+        "echo secret_env=$(env | grep -ciE 'secret|password|connection|apikey|token'); " +
+        "echo kernel=$(uname -r)";
+
+    /// <summary>What a correctly isolated container must report.</summary>
+    private static readonly Dictionary<string, string> Expected = new()
+    {
+        ["uid"] = "65534",
+        ["cap"] = "0000000000000000",
+        ["rootfs"] = "readonly",
+        ["tmp"] = "writable",
+        ["ifaces"] = "",
+        ["dns"] = "blocked",
+        ["docker_sock"] = "absent",
+        ["secret_env"] = "0",
+    };
+
+    /// <summary>
+    /// Starts a throwaway container with exactly the production flags and checks, from inside it, that
+    /// isolation holds: non-root, no capabilities, read-only root, no network interfaces or DNS, no Docker
+    /// socket and no secrets in the environment. Executors refuse to run code when this fails.
+    /// </summary>
+    public async Task<IsolationReport> SelfTestAsync(CancellationToken ct = default)
+    {
+        string name = ContainerPrefix + "probe-" + Guid.NewGuid().ToString("N")[..8];
+        string runtime = string.IsNullOrWhiteSpace(options.Runtime) ? "runc (default)" : options.Runtime;
+        try
+        {
+            string[] args = [.. HardeningArgs(options, name), "--entrypoint", "/bin/sh", options.Image, "-c", ProbeScript];
+            var (code, stdout, stderr, timedOut) = await RunProcessAsync(args, null, TimeSpan.FromSeconds(Math.Max(20, options.TimeoutSeconds)), 64 * 1024, ct);
+            if (timedOut)
+            {
+                await KillAsync(name);
+                return new(false, runtime, DateTimeOffset.UtcNow, new Dictionary<string, string>(), "Self-test container timed out.");
+            }
+            if (code != 0) return new(false, runtime, DateTimeOffset.UtcNow, new Dictionary<string, string>(), $"Self-test container failed to start (exit {code}).");
+            var seen = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(l => l.Split('=', 2)).Where(p => p.Length == 2)
+                .ToDictionary(p => p[0], p => p[1].Trim());
+            var failed = Expected.Where(e => !seen.TryGetValue(e.Key, out var v) || v != e.Value).Select(e => e.Key).ToList();
+            return new(failed.Count == 0, runtime, DateTimeOffset.UtcNow, seen,
+                failed.Count == 0 ? null : "Isolation check failed: " + string.Join(", ", failed));
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            return new(false, runtime, DateTimeOffset.UtcNow, new Dictionary<string, string>(), "Docker isn't available.");
+        }
+    }
+
+    /// <summary>Force-removes sandbox containers left behind (e.g. after a crash) that are older than <paramref name="age"/>.</summary>
+    public async Task<int> SweepAsync(TimeSpan age, CancellationToken ct = default)
+    {
+        try
+        {
+            var (code, stdout, _, _) = await RunProcessAsync(
+                ["ps", "-a", "--filter", "name=" + ContainerPrefix, "--format", "{{.ID}}|{{.CreatedAt}}"], null, TimeSpan.FromSeconds(15), 256 * 1024, ct);
+            if (code != 0) return 0;
+            var stale = new List<string>();
+            foreach (string line in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                string[] parts = line.Split('|', 2);
+                // CreatedAt looks like "2026-11-26 14:00:00 +0000 UTC".
+                if (parts.Length == 2 && DateTimeOffset.TryParse(parts[1].Replace(" UTC", "").Trim(), out var created) && DateTimeOffset.UtcNow - created > age)
+                    stale.Add(parts[0]);
+            }
+            if (stale.Count > 0) await RunProcessAsync(["rm", "-f", .. stale], null, TimeSpan.FromSeconds(30), 64 * 1024, ct);
+            return stale.Count;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            return 0;
+        }
+    }
+
     private async Task KillAsync(string name)
     {
         try
         {
-            await RunProcessAsync(["kill", name], null, TimeSpan.FromSeconds(10), 4096, CancellationToken.None);
+            await RunProcessAsync(["rm", "-f", name], null, TimeSpan.FromSeconds(15), 4096, CancellationToken.None);
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
