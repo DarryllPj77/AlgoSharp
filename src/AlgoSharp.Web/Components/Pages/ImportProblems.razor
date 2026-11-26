@@ -1,0 +1,238 @@
+@page "/problems/import"
+@inject LocalLibrary Library
+@inject NavigationManager Nav
+
+<PageTitle>Import problems · AlgoSharp</PageTitle>
+
+<div class="page">
+    <div class="viz-header">
+        <div class="viz-header-inner">
+            <div>
+                <div class="crumbs"><a href="/problems">Problem Solving</a><span>/</span><a href="/problems/mine">My Problems</a><span>/</span><span>Import</span></div>
+                <div class="viz-title"><h1>Import problems</h1></div>
+            </div>
+            <div class="viz-header-right">
+                <div class="mode-switch" role="tablist">
+                    <button role="tab" class="@(tab == "text" ? "on" : "")" @onclick='() => SetTab("text")'>Standard import</button>
+                    <button role="tab" class="@(tab == "json" ? "on" : "")" @onclick='() => SetTab("json")'>AlgoSharp format</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container imp">
+        @if (drafts is null)
+        {
+            <div class="box-card">
+                <header>
+                    <Icon Name="code" /> @(tab == "text" ? "Paste a lesson or exercises" : "Paste AlgoSharp JSON")
+                    <span class="muted">@source.Length.ToString("N0") characters</span>
+                </header>
+                <div class="body">
+                    @if (tab == "text")
+                    {
+                        <p class="field-hint">Paste text from ChatGPT, a document or a website. Headings like <code>Level 12: Title</code>, <code>Problem 3 - Title</code> or <code>### Exercise 1: Title</code> start a new problem; lines like <code>Concepts:</code>, <code>Difficulty:</code>, <code>Input:</code>, <code>Output:</code>, <code>Constraints:</code> are recognized. Nothing is guessed silently: you review everything before saving.</p>
+                    }
+                    else
+                    {
+                        <p class="field-hint">The most reliable way to import: copy the AI prompt, paste it into ChatGPT, Claude or another assistant together with your lesson, then paste the JSON it returns here.</p>
+                        <div class="actions-row" style="margin-top:10px">
+                            <button class="btn btn-sm btn-accent" @onclick="CopyPrompt"><Icon Name="code" /> @(copied ? "Prompt copied ✓" : "Copy AI prompt")</button>
+                            <button class="btn btn-sm" @onclick="() => showExample = !showExample">@(showExample ? "Hide" : "View") format example</button>
+                            <button class="btn btn-sm" @onclick="Validate" disabled="@(source.Trim().Length == 0)">Validate format</button>
+                        </div>
+                        @if (showExample)
+                        {
+                            <pre class="imp-example">@ImportSchema.ExampleJson()</pre>
+                            <button class="btn btn-sm btn-ghost" @onclick="() => source = ImportSchema.ExampleJson()">Paste this example into the box</button>
+                        }
+                        @if (copyFallback)
+                        {
+                            <p class="field-hint" style="margin-top:8px">Your browser blocked clipboard access. Select and copy the prompt below:</p>
+                            <textarea class="mono imp-prompt" readonly rows="8">@ImportSchema.AiPrompt()</textarea>
+                        }
+                    }
+                    <textarea class="mono imp-source" rows="16" placeholder="@(tab == "text" ? SamplePlaceholder : "{ \"format\": \"algosharp/problems\", \"version\": 1, \"problems\": [ ... ] }")"
+                              @bind="source" @bind:event="oninput" spellcheck="false"></textarea>
+
+                    @if (validation is { } v)
+                    {
+                        <div class="imp-validation @(v.Ok ? "ok" : "bad")">
+                            @if (v.Ok && v.Problems.All(p => p.Issues.Count == 0))
+                            {
+                                <p>✓ Valid AlgoSharp format: @v.Problems.Count problem(s), no issues.</p>
+                            }
+                            else
+                            {
+                                <p>@(v.Ok ? $"Readable, with {v.Issues.Count + v.Problems.Sum(p => p.Issues.Count)} note(s):" : "This can't be imported yet:")</p>
+                                <ul>
+                                    @foreach (var i in v.Issues.Concat(v.Problems.SelectMany(p => p.Issues)).Take(30))
+                                    {
+                                        <li class="@(i.Blocking ? "blocking" : "")"><code>@i.Path</code> @i.Message</li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                    }
+
+                    <div class="actions-row">
+                        <button class="btn btn-accent" disabled="@(source.Trim().Length == 0)" @onclick="Extract">
+                            <Icon Name="arrow" /> @(tab == "text" ? "Extract problems" : "Import problems")
+                        </button>
+                        @if (tab == "text")
+                        {
+                            <button class="btn btn-sm btn-ghost" @onclick="() => source = Sample">Use a sample lesson</button>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="imp-review-head">
+                <div>
+                    <h2>Review @drafts.Count problem@(drafts.Count == 1 ? "" : "s")</h2>
+                    <p>Found with the @(lastKind == "json" ? "AlgoSharp JSON format" : "standard text importer"). Check every field: nothing is saved until you confirm.</p>
+                </div>
+                <div class="field" style="margin-top:0;min-width:260px">
+                    <label>Collection for these problems</label>
+                    <input value="@collection" placeholder="e.g. Lesson 4: Neighbor Comparisons" @onchange="e => ApplyCollection(e.Value?.ToString() ?? string.Empty)" />
+                </div>
+            </div>
+            @if (importIssues.Count > 0)
+            {
+                <ul class="pe-issues">@foreach (var i in importIssues) { <li class="@(i.Blocking ? "blocking" : "")"><code>@i.Path</code> @i.Message</li> }</ul>
+            }
+
+            @for (int k = 0; k < drafts.Count; k++)
+            {
+                int i = k;
+                var d = drafts[i];
+                <div class="box-card imp-card @(d.Include ? "" : "excluded")">
+                    <header>
+                        <label class="pe-check"><input type="checkbox" checked="@d.Include" @onchange="e => d.Include = e.Value is true" /></label>
+                        @(d.Level.Length > 0 ? $"Level {d.Level} · " : "")@(d.Title.Length > 0 ? d.Title : "Untitled problem")
+                        <span class="muted">@(d.Include ? "will be saved" : "skipped")</span>
+                        <button class="icon-btn" title="Remove from import" aria-label="Remove from import" @onclick="() => drafts.RemoveAt(i)">✕</button>
+                    </header>
+                    @if (d.Include)
+                    {
+                        <div class="body"><ProblemEditor Draft="d" Changed="StateHasChanged" /></div>
+                    }
+                </div>
+            }
+
+            @if (saveError is not null)
+            {
+                <div class="message error"><span class="step-no">storage</span><p>@saveError</p></div>
+            }
+            <div class="actions-row imp-actions">
+                <button class="btn btn-accent" disabled="@(saving || ToSave.Count == 0 || ToSave.Any(d => d.BlockingErrors().Any()))" @onclick="Save">
+                    @(saving ? "Saving…" : $"Save {ToSave.Count} problem{(ToSave.Count == 1 ? "" : "s")} to My Problems")
+                </button>
+                <button class="btn btn-ghost" @onclick="() => drafts = null"><Icon Name="back" /> Back to the pasted text</button>
+                @if (ToSave.Any(d => d.BlockingErrors().Any()))
+                {
+                    <span class="field-error">Fix the highlighted problems (title and description are required) or untick them.</span>
+                }
+            </div>
+            <p class="field-hint">Saved in this browser's local storage (IndexedDB). It isn't uploaded anywhere, and it's lost if you clear this site's data; use Export in My Problems to keep a backup.</p>
+        }
+    </div>
+</div>
+
+@code {
+    private const string SamplePlaceholder = "Level 14: Count Local Maximums\nConcepts: Arrays, Loops, Multiple Conditions, Neighbor Comparison\nCount the elements greater than both neighbors.\nInput: [2, 7, 3, 9, 4, 8, 1]\nOutput: 3";
+
+    private const string Sample = """
+        Lesson 4: Neighbor Comparisons
+
+        Level 12: Count Increasing Adjacent Pairs
+        Concepts: Arrays, Loops, Neighbor Comparison
+        Given an array of integers, count how many adjacent pairs (nums[i], nums[i + 1]) are strictly increasing.
+        Input: [1, 3, 2, 4, 5]
+        Output: 3
+        Explanation: (1, 3), (2, 4) and (4, 5) increase.
+
+        Level 13: Count Decreasing Adjacent Pairs
+        Concepts: Arrays, Loops, Neighbor Comparison
+        Given an array of integers, count how many adjacent pairs are strictly decreasing.
+        Input: [5, 3, 4, 2, 1]
+        Output: 3
+
+        Level 14: Count Local Maximums
+        Concepts: Arrays, Loops, Multiple Conditions, Neighbor Comparison
+        Count the elements that are strictly greater than both of their neighbors. The first and last elements don't count.
+        Input: [2, 7, 3, 9, 4, 8, 1]
+        Output: 3
+        """;
+
+    private string tab = "text";
+    private string source = "";
+    private ImportResult? validation;
+    private List<ProblemDraft>? drafts;
+    private List<ImportIssue> importIssues = [];
+    private string collection = "";
+    private string lastKind = "text";
+    private bool showExample;
+    private bool copied;
+    private bool copyFallback;
+    private bool saving;
+    private string? saveError;
+
+    private List<ProblemDraft> ToSave => drafts?.Where(d => d.Include).ToList() ?? [];
+
+    private void SetTab(string t)
+    {
+        tab = t;
+        validation = null;
+    }
+
+    private async Task CopyPrompt()
+    {
+        copied = await Library.CopyAsync(ImportSchema.AiPrompt());
+        copyFallback = !copied;
+    }
+
+    private void Validate() => validation = ProblemImporter.ImportJson(source);
+
+    private void Extract()
+    {
+        var result = tab == "json" ? ProblemImporter.ImportJson(source) : ProblemImporter.Import(source);
+        validation = result;
+        if (result.Problems.Count == 0) return;
+        lastKind = result.Kind;
+        importIssues = [.. result.Issues];
+        collection = result.Collection ?? $"Imported {DateTime.Now:MMM d, yyyy}";
+        drafts = [.. result.Problems.Select(p => ProblemDraft.From(p.Problem, p.Issues))];
+        ApplyCollection(collection);
+    }
+
+    private void ApplyCollection(string value)
+    {
+        collection = value;
+        foreach (var d in drafts ?? []) d.Collection = value;
+    }
+
+    private async Task Save()
+    {
+        saving = true;
+        saveError = null;
+        try
+        {
+            var problems = ToSave.Select(d => d.ToProblem() with { Collection = d.Collection.Trim().Length > 0 ? d.Collection.Trim() : collection }).ToList();
+            var result = await Library.SaveProblemsAsync(problems);
+            if (!result.Ok)
+            {
+                saveError = result.Error;
+                return;
+            }
+            await Library.RequestPersistenceAsync();
+            Nav.NavigateTo($"/problems/mine?saved={problems.Count}");
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+}

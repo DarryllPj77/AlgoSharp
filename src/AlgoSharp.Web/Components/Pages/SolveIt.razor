@@ -1,12 +1,28 @@
 @page "/problems/{Slug}"
 @page "/code/{Slug}"
+@page "/problems/mine/{Id}"
 @using AlgoSharp.Playground.Compilation
 @using AlgoSharp.Playground.Execution
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 @inject PlaygroundService Service
+@inject LocalLibrary Library
 
-@if (problem is null)
+@if (problem is null && Id is not null)
+{
+    <PageTitle>My Problems · AlgoSharp</PageTitle>
+    <div class="page container empty">
+        @if (storageError is not null)
+        {
+            <p>@storageError <a href="/problems/mine" style="color:var(--brand)">Back to My Problems</a>.</p>
+        }
+        else
+        {
+            <p>Loading your problem…</p>
+        }
+    </div>
+}
+else if (problem is null)
 {
     <PageTitle>Problem not found · AlgoSharp</PageTitle>
     <div class="page container empty"><p>No problem called “@Slug”. <a href="/problems" style="color:var(--brand)">Back to problems</a>.</p></div>
@@ -18,16 +34,33 @@ else
         <div class="viz-header">
             <div class="viz-header-inner">
                 <div>
-                    <div class="crumbs"><a href="/problems">Problem Solving</a><span>/</span><span>@problem.Category</span></div>
-                    <div class="viz-title">
-                        <h1>@problem.Number. @problem.Title</h1>
-                        <span class="pill">@problem.Difficulty</span>
-                    </div>
+                    @if (userProblem is { } up)
+                    {
+                        <div class="crumbs"><a href="/problems">Problem Solving</a><span>/</span><a href="/problems/mine">My Problems</a><span>/</span><span>@(up.Collection.Length > 0 ? up.Collection : "Uncategorized")</span></div>
+                        <div class="viz-title">
+                            <h1>@(up.Level is int lv ? $"Level {lv}: " : "")@up.Title</h1>
+                            <span class="pill">@(up.Difficulty ?? "Unrated")</span>
+                            <span class="status-chip s-@Status.ToString().ToLowerInvariant()">@StatusLabel</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="crumbs"><a href="/problems">Problem Solving</a><span>/</span><span>@problem.Category</span></div>
+                        <div class="viz-title">
+                            <h1>@problem.Number. @problem.Title</h1>
+                            <span class="pill">@problem.Difficulty</span>
+                        </div>
+                    }
                 </div>
                 <div class="viz-header-right">
                     <span class="sandbox-status @(status?.Available == true ? "ok" : "off")" title="@status?.Message">
                         <i></i>@(status is null ? "Checking sandbox…" : status.Available ? "Sandbox ready" : "Execution disabled")
                     </span>
+                    @if (userProblem is not null)
+                    {
+                        <span class="draft-state">@draftState</span>
+                        <a class="btn btn-sm btn-ghost" href="/problems/mine/@Id/edit">Edit</a>
+                    }
                     <button class="btn btn-sm btn-ghost" @onclick="ResetCode"><Icon Name="reset" /> Starter code</button>
                     <button class="btn btn-accent" disabled="@(running || status?.Available != true)" @onclick="Visualize">
                         <Icon Name="play" /> @(running ? "Running…" : "Run & visualize")
@@ -42,6 +75,40 @@ else
                 <div class="box-card">
                     <header><Icon Name="info" /> Problem <span class="muted">@problem.Entry.Description</span></header>
                     <div class="body problem-body">
+                        @if (userProblem is { } u)
+                        {
+                            <p class="mode-banner @(setup!.EffectiveMode == ProblemMode.Challenge ? "challenge" : "")"><b>@setup.EffectiveMode</b> · @setup.Explanation</p>
+                            <p class="ps-statement" style="white-space:pre-line">@u.Description</p>
+                            @if (u.Concepts.Count > 0)
+                            {
+                                <div class="ps-tags" style="margin-top:8px">@foreach (var c in u.Concepts) { <span class="tag-chip">@c</span> }</div>
+                            }
+                            @if (u.InputSpec is not null || u.OutputSpec is not null)
+                            {
+                                <dl class="io-spec">
+                                    @if (u.InputSpec is not null) { <dt>Input</dt><dd>@u.InputSpec</dd> }
+                                    @if (u.OutputSpec is not null) { <dt>Output</dt><dd>@u.OutputSpec</dd> }
+                                </dl>
+                            }
+                            <div class="ps-examples">
+                                @for (int k = 0; k < u.Examples.Count; k++)
+                                {
+                                    var ex = u.Examples[k];
+                                    <div class="ps-example">
+                                        <b>Example @(k + 1)</b>
+                                        <span>Input: <code>@ex.Input</code></span>
+                                        <span>Output: <code>@ex.Output</code></span>
+                                        @if (ex.Explanation is not null) { <small>@ex.Explanation</small> }
+                                    </div>
+                                }
+                            </div>
+                            @if (u.Instructions is not null)
+                            {
+                                <p class="ps-statement" style="margin-top:10px;white-space:pre-line">@u.Instructions</p>
+                            }
+                        }
+                        else
+                        {
                         <p class="ps-statement">@problem.Description</p>
                         <div class="ps-examples">
                             @for (int k = 0; k < problem.Examples.Count; k++)
@@ -58,6 +125,7 @@ else
                                 </div>
                             }
                         </div>
+                        }
                         <ul class="ps-constraints">
                             @foreach (var c in problem.Constraints)
                             {
@@ -122,13 +190,20 @@ else
                 @if (Selected is { } outcome)
                 {
                     <div class="case-summary">
-                        <b>@run!.Cases.Count(c => c.Verdict?.Passed == true) / @run.Cases.Count passed</b>
+                        @if (run!.Cases.Any(c => c.Verdict?.Graded == true))
+                        {
+                            <b>@run.Cases.Count(c => c.Verdict?.Graded == true && c.Verdict.Passed) / @run.Cases.Count(c => c.Verdict?.Graded == true) passed</b>
+                        }
+                        else
+                        {
+                            <b class="ungraded">Practice run · not graded</b>
+                        }
                         <div class="case-tabs">
                             @for (int k = 0; k < run.Cases.Count; k++)
                             {
                                 int idx = k;
                                 var c = run.Cases[k];
-                                <button class="case-tab @(idx == selected ? "on" : "") @(c.Verdict?.Passed == true ? "pass" : "fail")" @onclick="() => SelectCase(idx)">
+                                <button class="case-tab @(idx == selected ? "on" : "") @(c.Verdict?.Graded == false ? (c.Result?.Completed == true ? "ran" : "fail") : c.Verdict?.Passed == true ? "pass" : "fail")" @onclick="() => SelectCase(idx)">
                                     <span class="dot"></span>@c.Case.Label
                                 </button>
                             }
@@ -138,12 +213,19 @@ else
                     <div class="box-card">
                         <header><Icon Name="bolt" /> Result · @outcome.Case.Label</header>
                         <div class="body result-body">
-                            <p class="verdict @(outcome.Verdict?.Passed == true ? "pass" : "fail")">@(outcome.Verdict?.Passed == true ? "✓ Passed" : "✗ Failed") — @outcome.Verdict?.Explanation</p>
+                            @if (outcome.Verdict?.Graded == false)
+                            {
+                                <p class="verdict @(outcome.Result?.Completed == true ? "ran" : "fail")">@(outcome.Result?.Completed == true ? "• Ran (not graded)" : "✗ Error") — @outcome.Verdict?.Explanation</p>
+                            }
+                            else
+                            {
+                                <p class="verdict @(outcome.Verdict?.Passed == true ? "pass" : "fail")">@(outcome.Verdict?.Passed == true ? "✓ Passed" : "✗ Failed") — @outcome.Verdict?.Explanation</p>
+                            }
                             <dl>
                                 <dt>Input</dt><dd><code>@problem.Describe(outcome.Case.Args)</code></dd>
                                 @if (outcome.Verdict?.Expected is { } expected)
                                 {
-                                    <dt>Expected</dt><dd><code>@expected</code></dd>
+                                    <dt>Expected</dt><dd><code>@expected</code>@if (outcome.Verdict.Graded == false) { <span class="field-hint"> (from the source, not verified)</span> }</dd>
                                 }
                                 @if (outcome.Result is { } r)
                                 {
@@ -243,6 +325,8 @@ else
                             </div>
                         }
                     </div>
+                    @if (problem.Params.Count > 0)
+                    {
                     <div class="field-row case-inputs" style="--params:@problem.Params.Count">
                         @foreach (var p in problem.Params)
                         {
@@ -257,15 +341,34 @@ else
                     {
                         <p class="field-error" style="margin-top:8px">@caseError</p>
                     }
+                    }
                     <div class="actions-row">
+                        @if (problem.Params.Count > 0)
+                        {
                         <button class="btn btn-sm" disabled="@(cases.Count >= MaxCases)" @onclick="AddCase">Add case</button>
+                        }
                         @if (problem.RandomCase is not null)
                         {
                             <button class="btn btn-sm" disabled="@(cases.Count >= MaxCases)" @onclick="AddRandomCase"><Icon Name="shuffle" /> Random case</button>
                         }
                         <button class="btn btn-sm btn-ghost" @onclick="ResetCases"><Icon Name="reset" /> Default cases</button>
                     </div>
-                    <p class="field-hint" style="margin-top:8px">Expected outputs for your own cases are computed by AlgoSharp's reference solution.</p>
+                    @if (userProblem is null)
+                    {
+                        <p class="field-hint" style="margin-top:8px">Expected outputs for your own cases are computed by AlgoSharp's reference solution.</p>
+                    }
+                    else if (problem.Params.Count > 0)
+                    {
+                        <p class="field-hint" style="margin-top:8px">Your own cases run without grading (they have no verified expected output). Add verified tests in Edit to grade them.</p>
+                    }
+                    else
+                    {
+                        <p class="field-hint" style="margin-top:8px">Practice mode runs your Main() once. Add a method signature in Edit to run against test cases.</p>
+                    }
+                    @if (userProblem is not null && setup?.EffectiveMode == ProblemMode.Practice)
+                    {
+                        <button class="btn btn-sm" style="margin-top:8px" @onclick="ToggleSolved">@(Status == ProblemStatus.Solved ? "Mark as not solved" : "Mark as solved")</button>
+                    }
                 </div>
             </div>
 
@@ -313,6 +416,17 @@ else
     private const int MaxCases = 10;
 
     [Parameter] public string Slug { get; set; } = "";
+    [Parameter] public string? Id { get; set; }
+
+    private UserProblem? userProblem;
+    private SolveSetup? setup;
+    private ProblemProgress? progress;
+    private bool pendingUserLoad;
+    private string? storageError;
+    private string draftState = "";
+
+    private ProblemStatus Status => progress?.Status ?? ProblemStatus.NotStarted;
+    private string StatusLabel => Status switch { ProblemStatus.InProgress => "In progress", ProblemStatus.Solved => "Solved", _ => "Not started" };
 
     private readonly Player player = new();
     private readonly Random rng = new();
@@ -345,8 +459,23 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        if (loadedSlug == Slug) return;
-        loadedSlug = Slug;
+        string key = Id is null ? Slug : "mine/" + Id;
+        if (loadedSlug == key) return;
+        loadedSlug = key;
+        userProblem = null;
+        setup = null;
+        progress = null;
+        storageError = null;
+        draftState = "";
+        if (Id is not null)
+        {
+            // Personal problems live in IndexedDB, which is only reachable after the first render.
+            problem = null;
+            run = null;
+            player.Load([], false);
+            pendingUserLoad = true;
+            return;
+        }
         problem = PlaygroundCatalog.Find(Slug);
         run = null;
         hintsShown = 0;
@@ -368,6 +497,13 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (pendingUserLoad)
+        {
+            pendingUserLoad = false;
+            await LoadUserProblem();
+            StateHasChanged();
+            return;
+        }
         if (problem is null) return;
         if (editor is null && module is null)
         {
@@ -395,6 +531,62 @@ else
         try { await editor.InvokeVoidAsync("highlight", Frame?.Line ?? 0, kind); } catch (JSDisconnectedException) { }
     }
 
+    private async Task LoadUserProblem()
+    {
+        var r = await Library.ProblemAsync(Id!);
+        if (!r.Ok)
+        {
+            storageError = r.Error;
+            return;
+        }
+        userProblem = r.Value!;
+        setup = UserProblemAdapter.ToPlayground(userProblem);
+        problem = setup.Problem;
+        var g = await Library.ProgressAsync(Id!);
+        progress = g.Value ?? new ProblemProgress { ProblemId = Id! };
+        if (!g.Ok) storageError = g.Error;
+        cases = [.. problem.DefaultCases];
+        newArgs.Clear();
+        foreach (var p in problem.Params) newArgs[p.Name] = p.Placeholder;
+        code = string.IsNullOrEmpty(progress.Draft) ? problem.StarterCode : progress.Draft;
+        draftState = string.IsNullOrEmpty(progress.Draft) ? "" : "Draft restored";
+        compile = PlaygroundService.Check(problem, code);
+        run = null;
+        hintsShown = 0;
+        if (editor is not null)
+        {
+            try { await editor.InvokeVoidAsync("setValue", code); await PushMarkers(); } catch (JSDisconnectedException) { }
+        }
+        status = await Service.StatusAsync();
+    }
+
+    /// <summary>Saves the editor's code as this problem's draft (personal problems only).</summary>
+    private async Task SaveDraft(ProblemStatus? newStatus = null)
+    {
+        if (userProblem is null || progress is null || problem is null) return;
+        var status = newStatus ?? (progress.Status == ProblemStatus.Solved ? ProblemStatus.Solved
+            : code.Trim() == problem.StarterCode.Trim() ? progress.Status : ProblemStatus.InProgress);
+        var next = progress with
+        {
+            Draft = code,
+            Status = status,
+            SolvedAt = status == ProblemStatus.Solved ? progress.SolvedAt ?? DateTimeOffset.UtcNow : null,
+        };
+        var r = await Library.SaveProgressAsync(next);
+        if (r.Ok)
+        {
+            progress = next;
+            draftState = $"Draft saved {DateTime.Now:HH:mm:ss}";
+        }
+        else
+        {
+            draftState = "Draft not saved";
+            storageError = r.Error;
+        }
+    }
+
+    private async Task ToggleSolved() => await SaveDraft(Status == ProblemStatus.Solved ? ProblemStatus.InProgress : ProblemStatus.Solved);
+
     [JSInvokable]
     public async Task OnCodeChanged()
     {
@@ -402,6 +594,7 @@ else
         code = await editor.InvokeAsync<string>("getValue");
         compile = PlaygroundService.Check(problem, code);
         await PushMarkers();
+        await SaveDraft();
         StateHasChanged();
     }
 
@@ -431,6 +624,12 @@ else
             await PushMarkers();
             selected = Math.Max(0, run.Cases.ToList().FindIndex(c => c.Verdict?.Passed != true));
             LoadCase(autoplay: true);
+            if (userProblem is not null)
+            {
+                var graded = run.Cases.Where(c => c.Verdict?.Graded == true).ToList();
+                bool solved = setup?.EffectiveMode == ProblemMode.Challenge && graded.Count > 0 && graded.All(c => c.Verdict!.Passed);
+                await SaveDraft(solved ? ProblemStatus.Solved : null);
+            }
         }
         finally
         {
@@ -463,6 +662,7 @@ else
         if (editor is not null) await editor.InvokeVoidAsync("setValue", code);
         compile = PlaygroundService.Check(problem, code);
         await PushMarkers();
+        await SaveDraft();
     }
 
     private async Task RefreshStatus() => status = await Service.StatusAsync();
@@ -508,6 +708,16 @@ else
         player.Dispose();
         try
         {
+            if (editor is not null && userProblem is not null)
+            {
+                // Keep edits made in the last moments before navigating away.
+                string latest = await editor.InvokeAsync<string>("getValue");
+                if (latest != progress?.Draft)
+                {
+                    code = latest;
+                    await SaveDraft();
+                }
+            }
             if (editor is not null)
             {
                 await editor.InvokeVoidAsync("dispose");

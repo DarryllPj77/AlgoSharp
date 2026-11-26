@@ -58,6 +58,40 @@ Each problem is pure data in `AlgoSharp.Playground/PlaygroundCatalog.cs`:
 
 To add a problem, add a `PlaygroundProblem` entry and a reference answer. The page, sandbox and visualizer need no changes. `tests/.../Solutions.cs` holds a correct solution for every problem, and the tests run each one through the full pipeline.
 
+## My Problems: import your own exercises
+
+**Import** (`/problems/import`) turns pasted material into problems. Nothing is saved until you review it.
+
+- **Standard import:** paste ordinary lesson text, e.g. from ChatGPT or a document. Deterministic rules, with no AI API involved:
+  - Headings like `Level 12: …`, `Problem 3 - …` or `### Exercise 1: …` start a new problem.
+  - Labels like `Concepts:`, `Difficulty:`, `Input:`, `Output:`, `Explanation:` and `Constraints:` are recognized, in plain text or Markdown.
+  - Missing details stay empty.
+  - A C# signature can be *suggested* from the examples (e.g. `public int CountLocalMaximums(int[] nums)`). It is clearly flagged so you check it.
+- **AlgoSharp format:** versioned JSON (`algosharp/problems`, version 1) for reliable imports.
+  - **Copy AI prompt** gives you a prompt for ChatGPT, Claude, etc. It is generated from the same schema definition the validator uses (`Library/ImportSchema.cs`), including a complete example.
+  - **Validate format** reports field-level errors.
+- **Review:** before saving you can edit every field, and remove or skip entries.
+  - Examples become test cases that start **unverified**; tick "verified" after checking each expected output.
+  - **Challenge** mode (automatic grading) only becomes available with a valid signature and at least one verified test.
+
+**My Problems** (`/problems/mine`):
+- search, and filter by difficulty, category and status (Not started / In progress / Solved)
+- grouped by lesson or collection
+- Solve it, Edit and Delete for each problem
+- export and restore a JSON backup
+
+Problems open in the same **Solve It** page, editor, sandbox and visualizer as the practice set:
+- **Challenge:** graded against verified tests; passing them all marks the problem solved.
+- **Practice:** with a signature, your method runs on the examples and the source's expected output is shown as unverified, without grading. Without a signature, you write `static void Main()` and see its console output and trace.
+
+Your code is saved as a draft automatically.
+
+**Storage:**
+- Everything is stored in this browser's **IndexedDB** (`wwwroot/js/store.js`): problems, drafts and progress. Nothing is uploaded.
+- The stores are versioned with migrations, and quota errors are reported.
+- Data belongs to the current browser profile and is lost if the site's data is cleared, so export backups.
+- Records carry `owner`, `revision` and timestamps, so sign-in and cloud sync can be added later without changing the format.
+
 ## How Solve It runs your code
 
 The Solve It page has a Monaco editor. Write any solution, in your own style and with your own names, then press **Run & visualize**.

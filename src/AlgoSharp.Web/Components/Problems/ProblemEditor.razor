@@ -1,0 +1,167 @@
+@* Editable form for one personal problem, used by the import preview and the Edit page. *@
+
+<div class="pe">
+    <div class="pe-grid">
+        <div class="field" style="margin-top:0"><label>Title</label><input value="@Draft.Title" @onchange="e => Set(() => Draft.Title = Text(e))" /></div>
+        <div class="field" style="margin-top:0"><label>Level</label><input value="@Draft.Level" inputmode="numeric" @onchange="e => Set(() => Draft.Level = Text(e))" /></div>
+        <div class="field" style="margin-top:0">
+            <label>Difficulty</label>
+            <select value="@Draft.Difficulty" @onchange="e => Set(() => Draft.Difficulty = Text(e))">
+                <option value="">Unspecified</option>
+                <option>Easy</option>
+                <option>Medium</option>
+                <option>Hard</option>
+            </select>
+        </div>
+        <div class="field" style="margin-top:0"><label>Category</label><input value="@Draft.Category" placeholder="e.g. Arrays" @onchange="e => Set(() => Draft.Category = Text(e))" /></div>
+    </div>
+    <div class="pe-grid two">
+        <div class="field"><label>Concepts <span>comma separated</span></label><input value="@Draft.Concepts" @onchange="e => Set(() => Draft.Concepts = Text(e))" /></div>
+        <div class="field"><label>Collection / lesson</label><input value="@Draft.Collection" @onchange="e => Set(() => Draft.Collection = Text(e))" /></div>
+    </div>
+    <div class="field"><label>Description</label><textarea rows="4" @onchange="e => Set(() => Draft.Description = Text(e))">@Draft.Description</textarea></div>
+
+    <details class="pe-section" open="@ExpandDetails">
+        <summary>Input, output, constraints &amp; instructions</summary>
+        <div class="pe-grid two">
+            <div class="field"><label>Input</label><textarea rows="2" @onchange="e => Set(() => Draft.InputSpec = Text(e))">@Draft.InputSpec</textarea></div>
+            <div class="field"><label>Output</label><textarea rows="2" @onchange="e => Set(() => Draft.OutputSpec = Text(e))">@Draft.OutputSpec</textarea></div>
+        </div>
+        <div class="pe-grid two">
+            <div class="field"><label>Constraints <span>one per line</span></label><textarea rows="3" @onchange="e => Set(() => Draft.Constraints = Text(e))">@Draft.Constraints</textarea></div>
+            <div class="field"><label>Additional instructions</label><textarea rows="3" @onchange="e => Set(() => Draft.Instructions = Text(e))">@Draft.Instructions</textarea></div>
+        </div>
+    </details>
+
+    <div class="pe-section-title">Examples <span>as written in the source</span></div>
+    @for (int k = 0; k < Draft.Examples.Count; k++)
+    {
+        int i = k;
+        var ex = Draft.Examples[i];
+        <div class="pe-row">
+            <input class="mono" value="@ex.Input" placeholder="Input" @onchange="e => Set(() => ex.Input = Text(e))" />
+            <input class="mono" value="@ex.Output" placeholder="Output" @onchange="e => Set(() => ex.Output = Text(e))" />
+            <input value="@ex.Explanation" placeholder="Explanation (optional)" @onchange="e => Set(() => ex.Explanation = Text(e))" />
+            <button class="icon-btn" title="Remove example" aria-label="Remove example" @onclick="() => Set(() => Draft.Examples.RemoveAt(i))">✕</button>
+        </div>
+    }
+    <button class="btn btn-sm btn-ghost" @onclick="() => Set(() => Draft.Examples.Add(new()))">+ Example</button>
+
+    <div class="pe-section-title">Solve It contract <span>needed for running against tests and grading</span></div>
+    <div class="field" style="margin-top:6px">
+        <label>
+            C# method signature
+            @if (Draft.SignatureSuggested)
+            {
+                <span class="pe-flag">suggested from the examples, please check it</span>
+            }
+        </label>
+        <input class="mono" value="@Draft.Signature" placeholder="public int CountLocalMaximums(int[] nums)" @onchange="e => Set(() => { Draft.Signature = Text(e); Draft.SignatureSuggested = false; })" />
+        @if (Draft.Signature.Trim().Length > 0 && SignatureError is { } err)
+        {
+            <span class="field-error">@err</span>
+        }
+        else if (Draft.Signature.Trim().Length == 0)
+        {
+            <span class="field-hint">Without a signature the problem opens in Practice mode: you write a static Main() and nothing is graded.</span>
+        }
+    </div>
+
+    @if (Signature is { } sig)
+    {
+        <div class="pe-tests">
+            <div class="pe-row head"><span>@string.Join(", ", sig.Params.Select(p => $"{p.Type} {p.Name}"))</span><span>expected @sig.ReturnType</span><span>verified</span><span></span></div>
+            @for (int k = 0; k < Draft.Tests.Count; k++)
+            {
+                int i = k;
+                var t = Draft.Tests[i];
+                while (t.Args.Count < sig.Params.Count) t.Args.Add("");
+                <div class="pe-row test">
+                    <div class="pe-args">
+                        @for (int a = 0; a < sig.Params.Count; a++)
+                        {
+                            int ai = a;
+                            <input class="mono" value="@t.Args[ai]" placeholder="@sig.Params[ai].Name" @onchange="e => Set(() => t.Args[ai] = Text(e))" />
+                        }
+                    </div>
+                    <input class="mono" value="@t.Expected" placeholder="expected (JSON)" @onchange="e => Set(() => t.Expected = Text(e))" />
+                    <label class="pe-check" title="Tick only after checking that the expected output is correct.">
+                        <input type="checkbox" checked="@t.Verified" @onchange="e => Set(() => t.Verified = e.Value is true)" />
+                    </label>
+                    <button class="icon-btn" title="Remove test" aria-label="Remove test" @onclick="() => Set(() => Draft.Tests.RemoveAt(i))">✕</button>
+                </div>
+            }
+            <div class="actions-row" style="margin-top:6px">
+                <button class="btn btn-sm btn-ghost" @onclick="() => AddTest(sig)">+ Test</button>
+                <button class="btn btn-sm btn-ghost" @onclick="TestsFromExamples">Tests from examples</button>
+            </div>
+            <p class="field-hint">Values are JSON: <code>[1, 2, 3]</code>, <code>5</code>, <code>"text"</code>, <code>true</code>. Tests from examples start <b>unverified</b>; tick “verified” after checking each expected output.</p>
+        </div>
+
+        <div class="pe-mode">
+            <label><input type="radio" name="mode-@Draft.Original.Id" checked="@(Draft.Mode == ProblemMode.Practice)" @onchange="() => Set(() => Draft.Mode = ProblemMode.Practice)" /> Practice <span>run &amp; visualize, no grading</span></label>
+            <label><input type="radio" name="mode-@Draft.Original.Id" checked="@(Draft.Mode == ProblemMode.Challenge)" @onchange="() => Set(() => Draft.Mode = ProblemMode.Challenge)" /> Challenge <span>graded against verified tests</span></label>
+        </div>
+        @if (Draft.Mode == ProblemMode.Challenge)
+        {
+            var (ok, reason) = UserProblemAdapter.CanChallenge(Draft.ToProblem());
+            <p class="@(ok ? "field-hint" : "field-error")">@(ok ? "✓ " : "Challenge mode isn't available yet: ")@reason</p>
+        }
+    }
+
+    <details class="pe-section">
+        <summary>Starter code (optional)</summary>
+        <textarea class="mono" rows="6" placeholder="Leave empty to generate it from the signature." @onchange="e => Set(() => Draft.StarterCode = Text(e))">@Draft.StarterCode</textarea>
+    </details>
+
+    @if (Draft.Issues.Count > 0)
+    {
+        <ul class="pe-issues">
+            @foreach (var issue in Draft.Issues)
+            {
+                <li class="@(issue.Blocking ? "blocking" : "")"><code>@issue.Path</code> @issue.Message</li>
+            }
+        </ul>
+    }
+    @foreach (var e in Draft.BlockingErrors())
+    {
+        <p class="field-error">@e</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ProblemDraft Draft { get; set; } = default!;
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public bool ExpandDetails { get; set; }
+
+    private ParsedSignature? Signature => SignatureParser.TryParse(Draft.Signature, out var s, out _) ? s : null;
+    private string? SignatureError => SignatureParser.TryParse(Draft.Signature, out _, out var e) ? null : e;
+
+    private static string Text(ChangeEventArgs e) => e.Value?.ToString() ?? "";
+
+    private async Task Set(Action change)
+    {
+        change();
+        await Changed.InvokeAsync();
+    }
+
+    private async Task AddTest(ParsedSignature sig)
+    {
+        Draft.Tests.Add(new ProblemDraft.TestRow { Args = sig.Params.Select(_ => string.Empty).ToList() });
+        await Changed.InvokeAsync();
+    }
+
+    private async Task TestsFromExamples()
+    {
+        if (Signature is not { } sig) return;
+        foreach (var ex in Draft.Examples)
+        {
+            if (ProblemImporter.SplitArgs(ex.Input, sig) is { } args && ProblemImporter.NormalizeExpected(ex.Output, sig.ReturnType) is { } expected
+                && !Draft.Tests.Any(t => t.Args.SequenceEqual(args) && t.Expected == expected))
+            {
+                Draft.Tests.Add(new ProblemDraft.TestRow { Args = args, Expected = expected, Verified = false });
+            }
+        }
+        await Changed.InvokeAsync();
+    }
+}

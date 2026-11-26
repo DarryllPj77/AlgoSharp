@@ -16,6 +16,7 @@ builder.Services.AddSingleton<ICodeExecutor>(_ => sandbox.Mode.Equals("Docker", 
     ? new DockerExecutor(sandbox)
     : new DisabledExecutor("Code execution is turned off in this deployment (Sandbox:Mode is not \"Docker\")."));
 builder.Services.AddSingleton<PlaygroundService>();
+builder.Services.AddScoped<AlgoSharp.Web.Services.LocalLibrary>();
 
 var app = builder.Build();
 

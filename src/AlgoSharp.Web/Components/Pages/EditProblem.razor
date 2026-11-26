@@ -1,0 +1,63 @@
+@page "/problems/mine/{Id}/edit"
+@inject LocalLibrary Library
+@inject NavigationManager Nav
+
+<PageTitle>Edit problem · AlgoSharp</PageTitle>
+
+<div class="page">
+    <div class="viz-header">
+        <div class="viz-header-inner">
+            <div>
+                <div class="crumbs"><a href="/problems">Problem Solving</a><span>/</span><a href="/problems/mine">My Problems</a><span>/</span><span>Edit</span></div>
+                <div class="viz-title"><h1>@(draft?.Title is { Length: > 0 } t ? t : "Edit problem")</h1></div>
+            </div>
+            <div class="viz-header-right">
+                @if (draft is not null)
+                {
+                    <a class="btn btn-sm btn-ghost" href="/problems/mine/@Id">Solve it</a>
+                    <button class="btn btn-accent" disabled="@(saving || draft.BlockingErrors().Any())" @onclick="Save">@(saving ? "Saving…" : "Save changes")</button>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="container imp">
+        @if (error is not null)
+        {
+            <div class="message error"><span class="step-no">storage</span><p>@error</p></div>
+        }
+        @if (draft is null && error is null)
+        {
+            <p class="vars-empty">Loading…</p>
+        }
+        else if (draft is not null)
+        {
+            <div class="box-card"><div class="body"><ProblemEditor Draft="draft" Changed="StateHasChanged" ExpandDetails="true" /></div></div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    private ProblemDraft? draft;
+    private string? error;
+    private bool saving;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        var r = await Library.ProblemAsync(Id);
+        if (r.Ok) draft = ProblemDraft.From(r.Value!);
+        else error = r.Error;
+        StateHasChanged();
+    }
+
+    private async Task Save()
+    {
+        saving = true;
+        var r = await Library.SaveProblemAsync(draft!.ToProblem());
+        saving = false;
+        if (!r.Ok) { error = r.Error; return; }
+        Nav.NavigateTo($"/problems/mine/{Id}");
+    }
+}

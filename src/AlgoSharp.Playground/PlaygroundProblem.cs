@@ -6,7 +6,8 @@ using Microsoft.CodeAnalysis;
 namespace AlgoSharp.Playground;
 
 /// <summary>How a parameter is typed in the editor and passed to the user's method.</summary>
-public enum ArgKind { IntArray, Int, UInt, String, IntMatrix, LinkedList, Tree }
+/// <summary>How a parameter is typed in the editor. <see cref="Json"/> = any JSON value, checked by the runner against the C# type.</summary>
+public enum ArgKind { IntArray, Int, UInt, String, IntMatrix, LinkedList, Tree, Json }
 
 public sealed record ParamSpec(string Name, ArgKind Kind, string Placeholder);
 
@@ -17,7 +18,8 @@ public sealed record ProblemExample(string[] Args, string Output, string? Explan
 public sealed record PlaygroundCase(string Label, IReadOnlyList<string> Args);
 
 /// <summary>Verdict for one test case, decided by the problem's checker.</summary>
-public sealed record Verdict(bool Passed, string Explanation, string? Expected);
+/// <summary>Verdict for one test case. <see cref="Graded"/> is false when there is no verified expected output.</summary>
+public sealed record Verdict(bool Passed, string Explanation, string? Expected, bool Graded = true);
 
 /// <summary>
 /// A problem users solve with their own code. Everything problem-specific is data: the page,
@@ -76,7 +78,8 @@ public sealed record PlaygroundProblem(
     {
         if (Checker is not null) return Checker(parsed, resultJson);
         var expected = Reference(parsed);
-        string expectedText = expected?.ToJsonString() ?? "null";
+        if (expected is null) return new(false, "No expected output is defined for this input, so it ran without grading.", null, Graded: false);
+        string expectedText = expected.ToJsonString();
         JsonNode? actual;
         try
         {
@@ -127,6 +130,7 @@ public static class ProblemInputs
                             && json.EnumerateArray().All(e => e.ValueKind == JsonValueKind.Null || e.ValueKind == JsonValueKind.Number && e.TryGetInt32(out _))
                             && TreeSize(json) <= MaxTreeNodes
                 ? null : $"a level-order array with nulls (at most {MaxTreeNodes} nodes), like [3, 9, 20, null, null, 15, 7]",
+            ArgKind.Json => text.Length <= 4000 ? null : "a value of at most 4000 characters",
             _ => null,
         };
         if (error is not null) throw new FormatException($"{p.Name}: expected {error}.");

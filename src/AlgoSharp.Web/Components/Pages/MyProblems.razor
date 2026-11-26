@@ -1,0 +1,183 @@
+@page "/problems/mine"
+@inject LocalLibrary Library
+@inject NavigationManager Nav
+
+<PageTitle>My Problems · AlgoSharp</PageTitle>
+
+<div class="page">
+    <div class="container">
+        <section class="ps-hero" style="padding-bottom:20px">
+            <span class="eyebrow"><span class="dot"></span>Problem solving · My Problems</span>
+            <h1>Your own <em>problem library</em>.</h1>
+            <p class="hero-lede">Import exercises from a lesson, ChatGPT or Claude, then solve them with the same editor, sandbox and step-by-step visualizer.</p>
+            <div class="hero-actions">
+                <a class="btn btn-primary" href="/problems/import"><Icon Name="arrow" /> Import problems</a>
+                <button class="btn" @onclick="Export" disabled="@(problems is not { Count: > 0 })">Export backup</button>
+                <label class="btn">Restore backup<input type="file" accept=".json,application/json" hidden @ref="fileInput" @onchange="Restore" /></label>
+                <a class="btn btn-ghost" href="/problems">Practice set</a>
+            </div>
+            <p class="field-hint local-note">
+                Stored only in this browser (IndexedDB), for this browser profile. It isn't synced, and clearing this site's data or using another browser
+                means you won't see it. Export a backup regularly.
+            </p>
+        </section>
+
+        @if (notice is not null)
+        {
+            <div class="message done" style="margin-bottom:14px"><span class="step-no">saved</span><p>@notice</p></div>
+        }
+        @if (error is not null)
+        {
+            <div class="message error" style="margin-bottom:14px"><span class="step-no">storage</span><p>@error</p></div>
+        }
+
+        @if (problems is null)
+        {
+            <p class="vars-empty">Loading your library…</p>
+        }
+        else if (problems.Count == 0)
+        {
+            <div class="lab-placeholder" style="margin-bottom:80px">
+                <Icon Name="play" />
+                <h2>No problems yet</h2>
+                <p>Paste a lesson, for example Levels 12–14 with their inputs and outputs, and AlgoSharp turns each exercise into a problem you can solve.</p>
+                <a class="btn btn-accent" style="margin-top:14px" href="/problems/import">Import problems</a>
+            </div>
+        }
+        else
+        {
+            <div class="mp-filters">
+                <div class="search"><Icon Name="search" /><input type="search" placeholder="Search by title…" value="@query" @oninput="e => query = e.Value?.ToString() ?? string.Empty" /></div>
+                <select value="@difficulty" @onchange="e => difficulty = e.Value?.ToString() ?? string.Empty"><option value="">Any difficulty</option>@foreach (var d in Difficulties) { <option>@d</option> }</select>
+                <select value="@category" @onchange="e => category = e.Value?.ToString() ?? string.Empty"><option value="">Any category</option>@foreach (var c in Categories) { <option>@c</option> }</select>
+                <select value="@status" @onchange="e => status = e.Value?.ToString() ?? string.Empty"><option value="">Any status</option><option value="NotStarted">Not started</option><option value="InProgress">In progress</option><option value="Solved">Solved</option></select>
+                <span class="mp-count">@Filtered.Count() of @problems.Count · @progress.Values.Count(p => p.Status == ProblemStatus.Solved) solved</span>
+            </div>
+
+            @foreach (var group in Filtered.GroupBy(p => p.Collection.Length > 0 ? p.Collection : "Uncategorized").OrderBy(g => g.Key))
+            {
+                <section class="mp-group">
+                    <h2>@group.Key <span>@group.Count()</span></h2>
+                    <div class="grid">
+                        @foreach (var p in group.OrderBy(p => p.Level ?? int.MaxValue).ThenBy(p => p.Title))
+                        {
+                            var st = StatusOf(p.Id);
+                            <div class="card mp-card cat-searching" @key="p.Id">
+                                <div class="card-body">
+                                    <span class="card-cat">@(p.Level is int l ? $"Level {l} · " : "")@(p.Difficulty ?? "Unrated")</span>
+                                    <h3 class="card-title">@p.Title</h3>
+                                    <div class="ps-tags">
+                                        <span class="status-chip s-@st.ToString().ToLowerInvariant()">@Label(st)</span>
+                                        <span class="tag-chip">@(p.Mode == ProblemMode.Challenge && UserProblemAdapter.CanChallenge(p).Ok ? "Challenge" : "Practice")</span>
+                                        @if (p.Category is not null)
+                                        {
+                                            <span class="tag-chip">@p.Category</span>
+                                        }
+                                    </div>
+                                    <p class="card-text">@Summary(p)</p>
+                                    <div class="card-foot mp-actions">
+                                        @if (confirmDelete == p.Id)
+                                        {
+                                            <span class="field-error">Delete permanently?</span>
+                                            <button class="btn btn-sm" @onclick="() => Delete(p.Id)">Delete</button>
+                                            <button class="btn btn-sm btn-ghost" @onclick="() => confirmDelete = null">Cancel</button>
+                                        }
+                                        else
+                                        {
+                                            <a class="btn btn-sm btn-accent" href="/problems/mine/@p.Id">Solve it</a>
+                                            <a class="btn btn-sm btn-ghost" href="/problems/mine/@p.Id/edit">Edit</a>
+                                            <button class="btn btn-sm btn-ghost" @onclick="() => confirmDelete = p.Id">Delete</button>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </section>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "saved")] public int? Saved { get; set; }
+
+    private List<UserProblem>? problems;
+    private Dictionary<string, ProblemProgress> progress = [];
+    private string query = "", difficulty = "", category = "", status = "";
+    private string? notice, error, confirmDelete;
+    private ElementReference fileInput;
+
+    private IEnumerable<string> Difficulties => (problems ?? []).Select(p => p.Difficulty ?? "Unrated").Distinct().Order();
+    private IEnumerable<string> Categories => (problems ?? []).Select(p => p.Category).OfType<string>().Distinct().Order();
+
+    private IEnumerable<UserProblem> Filtered => (problems ?? [])
+        .Where(p => query.Trim().Length == 0 || p.Title.Contains(query.Trim(), StringComparison.OrdinalIgnoreCase))
+        .Where(p => difficulty.Length == 0 || (p.Difficulty ?? "Unrated") == difficulty)
+        .Where(p => category.Length == 0 || p.Category == category)
+        .Where(p => status.Length == 0 || StatusOf(p.Id).ToString() == status);
+
+    private ProblemStatus StatusOf(string id) => progress.TryGetValue(id, out var g) ? g.Status : ProblemStatus.NotStarted;
+
+    private static string Label(ProblemStatus s) => s switch { ProblemStatus.InProgress => "In progress", ProblemStatus.Solved => "Solved", _ => "Not started" };
+
+    private static string Summary(UserProblem p) => p.Description.Length > 140 ? p.Description[..137] + "…" : p.Description;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        if (Saved is > 0) notice = $"Saved {Saved} problem{(Saved == 1 ? "" : "s")} to your library.";
+        await Load();
+        StateHasChanged();
+    }
+
+    private async Task Load()
+    {
+        var p = await Library.ProblemsAsync();
+        var g = await Library.ProgressAsync();
+        if (!p.Ok || !g.Ok)
+        {
+            error = p.Error ?? g.Error;
+            problems ??= [];
+            return;
+        }
+        problems = p.Value;
+        progress = g.Value!.ToDictionary(x => x.ProblemId);
+    }
+
+    private async Task Delete(string id)
+    {
+        var r = await Library.DeleteProblemAsync(id);
+        confirmDelete = null;
+        if (!r.Ok) { error = r.Error; return; }
+        notice = "Problem deleted.";
+        await Load();
+    }
+
+    private async Task Export()
+    {
+        var r = await Library.ExportAsync();
+        if (r.Ok) notice = $"Exported {r.Value} problem(s) as a JSON backup.";
+        else error = r.Error;
+    }
+
+    private async Task Restore()
+    {
+        error = null;
+        string? json;
+        try
+        {
+            json = await Library.ReadFileAsync(fileInput);
+        }
+        catch (InvalidOperationException ex)
+        {
+            error = ex.Message;
+            return;
+        }
+        if (json is null) return;
+        var r = await Library.RestoreAsync(json);
+        if (!r.Ok) { error = r.Error; return; }
+        notice = $"Restored {r.Value} problem(s) from the backup.";
+        await Load();
+    }
+}
