@@ -1,0 +1,21 @@
+@* Live operation counters for the current step. *@
+
+<div class="counters">
+    @foreach (var c in Counters)
+    {
+        bool changed = Previous is not null && !Previous.Any(p => p.Name == c.Name && p.Value == c.Value);
+        <div @key="@(c.Name + c.Value)" class="counter @(changed ? "bump" : "")">
+            <b>@c.Value</b><span>@c.Name</span>
+        </div>
+    }
+    @if (Steps is not null)
+    {
+        <div class="counter muted"><b>@Steps</b><span>steps recorded</span></div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<VarView> Counters { get; set; } = [];
+    [Parameter] public IReadOnlyList<VarView>? Previous { get; set; }
+    [Parameter] public int? Steps { get; set; }
+}

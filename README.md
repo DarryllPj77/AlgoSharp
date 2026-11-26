@@ -30,6 +30,15 @@ dotnet test
 
 Each visualizer has play, pause, step forward and back, a timeline you can scrub, seven speeds, custom and random input, variables, complexity, and a beginner-friendly explanation for every step. Keyboard: `Space` play, `←`/`→` step, `Home`/`End`, `R` run again, `/` search.
 
+## Problem solving
+
+`/problems` shows one problem solved two ways, on the same input:
+
+- **Two Sum:** brute force (nested loops, O(n²)) vs a hash map (`Dictionary<int, int>`, O(n)). You can watch either approach on its own or both side by side on a shared timeline. Each one has its own C# line highlighting, a live dictionary view, and live counters for comparisons, lookups and insertions.
+- **Performance comparison:** puts Big-O (theory) next to the operations actually counted on your input. It also reruns the same code on worst-case inputs with n = 10, 100 and 1,000, with step recording off and only the counters on.
+
+To add a problem, write each approach in `Algorithms/` (wrapped in a `// <code id>` region, using `T.Tick(...)` for counters) and register a `ProblemDef` in `Problems/ProblemCatalog.cs`. The page, comparison mode and scaling chart work without changes.
+
 ## How it works
 
 ```

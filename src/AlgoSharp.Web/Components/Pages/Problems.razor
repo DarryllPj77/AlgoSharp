@@ -1,0 +1,24 @@
+@page "/problems"
+
+<PageTitle>Problem Solving · AlgoSharp</PageTitle>
+
+<div class="page">
+    <div class="container">
+        <section class="ps-hero">
+            <span class="eyebrow"><span class="dot"></span>Problem solving</span>
+            <h1>One problem, <em>two ways</em> to solve it.</h1>
+            <p class="hero-lede">
+                Watch a brute-force solution and an optimized one run side by side on the same input, in real C#,
+                and compare what each one actually costs: comparisons, lookups and memory.
+            </p>
+        </section>
+
+        <div class="grid" style="padding-bottom:96px">
+            @for (int i = 0; i < ProblemCatalog.All.Count; i++)
+            {
+                var p = ProblemCatalog.All[i];
+                <ProblemCard Problem="p" Index="i" />
+            }
+        </div>
+    </div>
+</div>

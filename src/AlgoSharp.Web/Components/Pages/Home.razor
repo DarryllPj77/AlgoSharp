@@ -74,6 +74,24 @@
         </div>
     </section>
 
+    <section class="section" style="padding-top:0">
+        <div class="container">
+            <div class="section-head">
+                <div>
+                    <h2>Problem solving</h2>
+                    <p>Compare a brute-force solution with an optimized one on the same input, step by step.</p>
+                </div>
+                <a class="btn" href="/problems">All problems <Icon Name="arrow" /></a>
+            </div>
+            <div class="grid">
+                @for (int i = 0; i < ProblemCatalog.All.Count && i < 4; i++)
+                {
+                    <ProblemCard Problem="ProblemCatalog.All[i]" Index="i" />
+                }
+            </div>
+        </div>
+    </section>
+
     <footer class="footer">
         <div class="container">
             <span>AlgoSharp — built with ASP.NET Core Blazor on .NET 10.</span>

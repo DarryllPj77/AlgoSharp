@@ -25,6 +25,33 @@ public sealed class ArrayTracer
     private int rangeLo = -1, rangeHi = -1;
     private bool hasAux;
     private int maxValue = 1;
+    private readonly Dictionary<string, long> counters = [];
+    private Func<IEnumerable<KeyValuePair<int, int>>>? map;
+    private string mapTitle = "";
+    private static readonly Step Skipped = new("", "", []);
+
+    /// <summary>
+    /// When false, steps are not recorded but counters still tick. Used to measure operation
+    /// counts on large inputs with the same code that is visualized.
+    /// </summary>
+    public bool Recording { get; init; } = true;
+
+    /// <summary>Counts one operation (comparison, lookup, ...). Shown live and in comparisons.</summary>
+    public void Tick(string counter, int by = 1) => counters[counter] = counters.GetValueOrDefault(counter) + by;
+
+    public long Count(string counter) => counters.GetValueOrDefault(counter);
+
+    public IReadOnlyDictionary<string, long> Counters => counters;
+
+    /// <summary>Declares a counter at 0 so it is displayed from the first step.</summary>
+    public void Counter(string counter) => counters.TryAdd(counter, 0);
+
+    /// <summary>Shows a real dictionary next to the array; it is read on every snapshot.</summary>
+    public void Watch(IReadOnlyDictionary<int, int> dictionary, string title)
+    {
+        map = () => dictionary;
+        mapTitle = title;
+    }
 
     public ArrayTracer(ArrayLayout layout, int capacity, IEnumerable<int>? values = null)
     {
@@ -180,6 +207,7 @@ public sealed class ArrayTracer
 
     internal Step Emit(ArrayStepBuilder b, bool record)
     {
+        if (!Recording) return Skipped;
         var views = new List<CellView>(cells.Count + leaving.Count);
         foreach (var c in cells)
         {
@@ -203,7 +231,16 @@ public sealed class ArrayTracer
         }
 
         var frame = new ArrayFrame(Layout, Capacity, views, pointers, rangeLo, rangeHi, hasAux, maxValue);
-        var step = new Step(b.Label, b.Message, b.Vars, Array: frame, IsError: b.IsError);
+        var step = new Step(b.Label, b.Message, b.Vars, Array: frame, IsError: b.IsError)
+        {
+            Counters = counters.Select(c => new VarView(c.Key, c.Value.ToString())).ToList(),
+            Callout = b.CalloutText is null ? null : new Callout(b.CalloutText, b.CalloutTone),
+            Map = map is null ? null : new MapFrame(
+                mapTitle,
+                map().Select(e => new MapEntryView(e.Key.ToString(), e.Value.ToString(), b.KeyHighlightFor(e.Key) ?? CellState.Default)).ToList(),
+                b.Probe?.ToString(),
+                b.Probe is { } probe ? map().Any(e => e.Key == probe) : null),
+        };
         if (record)
         {
             Steps.Add(step);
@@ -236,6 +273,41 @@ public sealed class ArrayStepBuilder
     internal bool IsError { get; private set; }
     internal List<VarView> Vars { get; } = [];
     internal List<(string Name, int Pos, int Row)> Pointers { get; } = [];
+    internal string? CalloutText { get; private set; }
+    internal CellState CalloutTone { get; private set; }
+    internal int? Probe { get; private set; }
+    private readonly List<(CellState State, int Key)> keyHighlights = [];
+
+    /// <summary>A short expression shown prominently for this step.</summary>
+    public ArrayStepBuilder Callout(string text, CellState tone = CellState.Default)
+    {
+        CalloutText = text;
+        CalloutTone = tone;
+        return this;
+    }
+
+    /// <summary>Highlights a key in the watched dictionary.</summary>
+    public ArrayStepBuilder HlKey(CellState state, int key)
+    {
+        keyHighlights.Add((state, key));
+        return this;
+    }
+
+    /// <summary>Shows a dictionary lookup of <paramref name="key"/> (hit or miss is computed).</summary>
+    public ArrayStepBuilder Lookup(int key)
+    {
+        Probe = key;
+        return this;
+    }
+
+    internal CellState? KeyHighlightFor(int key)
+    {
+        for (int i = keyHighlights.Count - 1; i >= 0; i--)
+        {
+            if (keyHighlights[i].Key == key) return keyHighlights[i].State;
+        }
+        return null;
+    }
 
     /// <summary>Highlights main-row positions for this step only.</summary>
     public ArrayStepBuilder Hl(CellState state, params int[] positions)

@@ -76,6 +76,14 @@ public sealed record GraphFrame(
 
 public sealed record TableCell(string Value, CellState State);
 
+public sealed record MapEntryView(string Key, string Value, CellState State);
+
+/// <summary>A live view of a real Dictionary, plus the key being looked up (if any).</summary>
+public sealed record MapFrame(string Title, IReadOnlyList<MapEntryView> Entries, string? ProbeKey, bool? ProbeHit);
+
+/// <summary>A short highlighted expression shown over the visualization, e.g. "2 + 7 = 9".</summary>
+public sealed record Callout(string Text, CellState Tone);
+
 /// <summary>A dynamic-programming table: headers plus a grid of cells.</summary>
 public sealed record TableFrame(
     IReadOnlyList<string> RowHeaders,
@@ -95,4 +103,10 @@ public sealed record Step(
     ListFrame? List = null,
     bool IsError = false,
     GraphFrame? Graph = null,
-    TableFrame? Table = null);
+    TableFrame? Table = null)
+{
+    /// <summary>Live operation counters (comparisons, lookups, ...) at this step.</summary>
+    public IReadOnlyList<VarView> Counters { get; init; } = [];
+    public MapFrame? Map { get; init; }
+    public Callout? Callout { get; init; }
+}

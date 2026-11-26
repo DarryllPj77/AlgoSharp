@@ -1,0 +1,38 @@
+@* Live view of a real Dictionary<int, int> captured in a step, with the current lookup. *@
+
+<div class="mapv">
+    <div class="mapv-head">
+        <code>Dictionary&lt;int, int&gt;</code>
+        <span class="mapv-title">@Frame.Title</span>
+        <span class="mapv-count">@Frame.Entries.Count @(Frame.Entries.Count == 1 ? "entry" : "entries")</span>
+    </div>
+    <div class="mapv-probe @(Frame.ProbeKey is null ? "idle" : Frame.ProbeHit == true ? "hit" : "miss")">
+        @if (Frame.ProbeKey is not null)
+        {
+            <span>TryGetValue(<b>@Frame.ProbeKey</b>)</span>
+            <span class="res">@(Frame.ProbeHit == true ? "✓ found" : "✗ not found")</span>
+        }
+        else
+        {
+            <span>No lookup in this step</span>
+        }
+    </div>
+    <div class="mapv-entries">
+        @if (Frame.Entries.Count == 0)
+        {
+            <span class="mapv-empty">empty</span>
+        }
+        @foreach (var e in Frame.Entries)
+        {
+            <div @key="e.Key" class="mapv-entry s-@e.State.ToString().ToLowerInvariant()">
+                <span class="k">@e.Key</span>
+                <span class="arrow">→</span>
+                <span class="v" @key="@(e.Key + ":" + e.Value)">@e.Value</span>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MapFrame Frame { get; set; } = default!;
+}
