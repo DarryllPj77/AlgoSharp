@@ -1,12 +1,12 @@
 @page "/problems/{Slug}"
 @page "/code/{Slug}"
-@page "/problems/mine/{Id}"
 @using AlgoSharp.Playground.Compilation
 @using AlgoSharp.Playground.Execution
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 @inject PlaygroundService Service
 @inject LocalLibrary Library
+@inject NavigationManager Nav
 
 @if (problem is null && Id is not null)
 {
@@ -97,6 +97,12 @@ else
                     }
                 </div>
                 <div class="viz-header-right">
+                    @if (!signedIn)
+                    {
+                        <a class="btn btn-accent" href="@SignInHref"><Icon Name="code" /> Sign in to solve</a>
+                    }
+                    else
+                    {
                     <span class="sandbox-status @(status?.Available == true ? "ok" : "off")" title="@status?.Message">
                         <i></i>@(status is null ? "Checking sandbox…" : status.Available ? "Sandbox ready" : "Execution disabled")
                     </span>
@@ -109,6 +115,7 @@ else
                     <button class="btn btn-accent" disabled="@(running || status?.Available != true)" @onclick="Visualize">
                         <Icon Name="play" /> @(running ? "Running…" : "Run & visualize")
                     </button>
+                    }
                 </div>
             </div>
         </div>
@@ -179,6 +186,8 @@ else
                     </div>
                 </div>
 
+                @if (signedIn)
+                {
                 <div class="box-card lab-editor-card">
                     <header><Icon Name="code" /> Solution.cs <span class="muted">C# · your own names and style</span></header>
                     <div class="lab-editor" @ref="editorHost"></div>
@@ -223,9 +232,29 @@ else
                         </div>
                     </div>
                 }
+                }
             </section>
 
             <!-- ============ results + visualization ============ -->
+            @if (!signedIn)
+            {
+                <section class="lab-right">
+                    <div class="box-card workspace-gate">
+                        <header><Icon Name="code" /> Your coding workspace</header>
+                        <div class="body">
+                            <h2>Sign in to access your coding workspace.</h2>
+                            <p>The problem is free to read. To write C# in the editor, check it as you type, save drafts and track progress,
+                                sign in or create a free account. You'll come straight back to this problem.</p>
+                            <div class="auth-actions">
+                                <a class="btn btn-primary" href="@SignInHref">Sign in</a>
+                                <a class="btn" href="@SignUpHref">Create an account</a>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            }
+            else
+            {
             <section class="lab-right">
                 @if (run?.ExecutionError is { } execError)
                 {
@@ -352,8 +381,11 @@ else
                     </div>
                 }
             </section>
+            }
         </div>
 
+        @if (signedIn)
+        {
         <div class="lab-bottom">
             <div class="box-card">
                 <header><Icon Name="vars" /> Test cases <span class="muted">@cases.Count / @MaxCases</span></header>
@@ -454,6 +486,8 @@ else
             </div>
         </div>
 
+        }
+
         @if (navCount > 1)
         {
             <nav class="pnav" aria-label="Problem navigation">
@@ -502,6 +536,18 @@ else
 
     [Parameter] public string Slug { get; set; } = "";
     [Parameter] public string? Id { get; set; }
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    /// <summary>
+    /// The editor, compile checks, drafts and Run are the signed-in workspace. This is enforced here on the
+    /// server (nothing is compiled, loaded, saved or run for anonymous visitors), not just hidden in the UI.
+    /// </summary>
+    private bool signedIn;
+
+    private string ReturnPath => "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('#')[0];
+    private string SignInHref => $"/account/login?returnUrl={Uri.EscapeDataString(ReturnPath)}";
+    private string SignUpHref => $"/account/register?returnUrl={Uri.EscapeDataString(ReturnPath)}";
 
     private UserProblem? userProblem;
     private SolveSetup? setup;
@@ -553,6 +599,13 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
+        signedIn = AuthState is not null && (await AuthState).User.Identity?.IsAuthenticated == true;
+        if (Id is not null && !signedIn)
+        {
+            // Personal problems are only reachable through the [Authorize] page; refuse anything else.
+            Nav.NavigateTo(SignInHref, forceLoad: true);
+            return;
+        }
         string key = Id is null ? Slug : "mine/" + Id;
         if (loadedSlug == key) return;
         if (userProblem is not null && editor is not null)
@@ -616,6 +669,7 @@ else
         newArgs.Clear();
         foreach (var p in problem.Params) newArgs[p.Name] = p.Placeholder;
         code = problem.StarterCode;
+        if (!signedIn) return; // description only: no compile, no sandbox status
         compile = PlaygroundService.Check(problem, code);
         RefreshAdvice();
         if (editor is not null)
@@ -627,6 +681,7 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!signedIn) return; // no editor, no IndexedDB access for anonymous visitors
         if (pendingUserLoad)
         {
             pendingUserLoad = false;
@@ -709,7 +764,7 @@ else
     /// <summary>Saves the editor's code as this problem's draft (personal problems only).</summary>
     private async Task SaveDraft(ProblemStatus? newStatus = null)
     {
-        if (userProblem is null || progress is null || problem is null) return;
+        if (!signedIn || userProblem is null || progress is null || problem is null) return;
         var status = newStatus ?? (progress.Status == ProblemStatus.Solved ? ProblemStatus.Solved
             : code.Trim() == problem.StarterCode.Trim() ? progress.Status : ProblemStatus.InProgress);
         var next = progress with
@@ -745,7 +800,7 @@ else
     [JSInvokable]
     public async Task OnCodeChanged()
     {
-        if (editor is null || problem is null) return;
+        if (!signedIn || editor is null || problem is null) return;
         code = await editor.InvokeAsync<string>("getValue");
         compile = PlaygroundService.Check(problem, code);
         RefreshAdvice();
@@ -767,7 +822,8 @@ else
 
     private async Task Visualize()
     {
-        if (problem is null || running) return;
+        // Signing in never bypasses the sandbox: Run still goes only to ICodeExecutor (Docker, or disabled).
+        if (!signedIn || problem is null || running) return;
         running = true;
         player.Load([], false);
         StateHasChanged();

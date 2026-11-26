@@ -63,12 +63,15 @@
     [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
     [SupplyParameterFromQuery(Name = "done")] private string? Done { get; set; }
 
+    public const string WorkspaceMessage = "Sign in to access your coding workspace.";
+
     private string Safe => AlgoSharp.Accounts.ReturnUrl.Safe(ReturnUrl);
     private string RegisterHref => ReturnUrl is null ? "/account/register" : $"/account/register?returnUrl={Uri.EscapeDataString(Safe)}";
     private string? Notice => Done switch
     {
         "signedout" => "You've been signed out.",
         "everywhere" => "You've been signed out on every device. Sign in again to continue.",
+        _ when AlgoSharp.Accounts.ReturnUrl.IsWorkspace(ReturnUrl) => WorkspaceMessage,
         _ => null,
     };
 

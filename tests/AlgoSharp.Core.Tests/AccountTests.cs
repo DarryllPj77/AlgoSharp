@@ -67,6 +67,19 @@ public class AccountHelperTests
     public void Return_urls_stay_on_this_site(string? input, string expected) => Assert.Equal(expected, ReturnUrl.Safe(input));
 
     [Theory]
+    [InlineData("/problems/two-sum", true)]
+    [InlineData("/problems/mine", true)]
+    [InlineData("/problems/mine/abc123", true)]
+    [InlineData("/problems/import", true)]
+    [InlineData("/code/two-sum", true)]
+    [InlineData("/problems", false)]
+    [InlineData("/visualize/bubble-sort", false)]
+    [InlineData("/account", false)]
+    [InlineData("//evil.example/problems/x", false)]
+    [InlineData(null, false)]
+    public void Workspace_paths_get_the_sign_in_message(string? url, bool expected) => Assert.Equal(expected, ReturnUrl.IsWorkspace(url));
+
+    [Theory]
     [InlineData("ada", true)]
     [InlineData("Ada_Lovelace-1.0", true)]
     [InlineData("ab", false)]

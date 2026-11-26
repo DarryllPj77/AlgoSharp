@@ -1,0 +1,10 @@
+@page "/problems/mine/{Id}"
+@attribute [Authorize]
+@* Solve It for a personal (imported) problem. Requires an account: the [Authorize] attribute is
+   enforced by the server on the first request and by the router on in-app navigation. *@
+
+<SolveIt Id="@Id" />
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+}

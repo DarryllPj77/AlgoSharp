@@ -5,7 +5,8 @@
 
 <PageTitle>Create account · AlgoSharp</PageTitle>
 
-<AuthShell Title="Create your account" Subtitle="Free, and optional: everything works without one." Error="@FormError">
+<AuthShell Title="Create your account" Subtitle="Free. Reading problems and the visualizers needs no account; writing and saving code does." Error="@FormError"
+           Notice="@(AlgoSharp.Accounts.ReturnUrl.IsWorkspace(ReturnUrl) ? Login.WorkspaceMessage : null)">
     <ChildContent>
         @if (!Accounts.Enabled)
         {

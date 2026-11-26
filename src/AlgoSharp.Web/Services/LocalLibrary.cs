@@ -52,7 +52,19 @@ public sealed class LocalLibrary(IJSRuntime js, AuthenticationStateProvider auth
     private async Task<IJSObjectReference> Module() =>
         module ??= await js.InvokeAsync<IJSObjectReference>("import", "./js/store.js");
 
-    private async Task<JsResult> Call(string fn, params object?[] args) => await CallOn((await OwnerAsync()).DbName, fn, args);
+    public const string SignInRequired = "Sign in to access your coding workspace.";
+
+    /// <summary>
+    /// Every library operation runs for the signed-in account's own database. Anonymous circuits are
+    /// refused here on the server (the pages are [Authorize] too); the guest database is only ever read
+    /// by a signed-in account, to offer copying it.
+    /// </summary>
+    private async Task<JsResult> Call(string fn, params object?[] args)
+    {
+        var who = await OwnerAsync();
+        if (who.IsGuest) return new JsResult(false, null, SignInRequired);
+        return await CallOn(who.DbName, fn, args);
+    }
 
     private async Task<JsResult> CallOn(string db, string fn, params object?[] args)
     {
@@ -66,7 +78,11 @@ public sealed class LocalLibrary(IJSRuntime js, AuthenticationStateProvider auth
         }
     }
 
-    public async Task<StoreResult<List<UserProblem>>> ProblemsAsync() => await ProblemsIn((await OwnerAsync()).DbName);
+    public async Task<StoreResult<List<UserProblem>>> ProblemsAsync()
+    {
+        var who = await OwnerAsync();
+        return who.IsGuest ? new(false, null, SignInRequired) : await ProblemsIn(who.DbName);
+    }
 
     private async Task<StoreResult<List<UserProblem>>> ProblemsIn(string db)
     {
@@ -114,7 +130,11 @@ public sealed class LocalLibrary(IJSRuntime js, AuthenticationStateProvider auth
         return new(r.Ok, r.Ok, r.Error);
     }
 
-    public async Task<StoreResult<List<ProblemProgress>>> ProgressAsync() => await ProgressIn((await OwnerAsync()).DbName);
+    public async Task<StoreResult<List<ProblemProgress>>> ProgressAsync()
+    {
+        var who = await OwnerAsync();
+        return who.IsGuest ? new(false, null, SignInRequired) : await ProgressIn(who.DbName);
+    }
 
     private async Task<StoreResult<List<ProblemProgress>>> ProgressIn(string db)
     {

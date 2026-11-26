@@ -16,4 +16,11 @@ public static class ReturnUrl
         if (url.Length > 2048) return fallback;
         return url;
     }
+
+    /// <summary>True for the signed-in coding workspace (Solve It, My Problems, Import), used to explain why sign-in is needed.</summary>
+    public static bool IsWorkspace(string? url)
+    {
+        string safe = Safe(url, "");
+        return safe.StartsWith("/problems/", StringComparison.OrdinalIgnoreCase) || safe.StartsWith("/code/", StringComparison.OrdinalIgnoreCase);
+    }
 }
