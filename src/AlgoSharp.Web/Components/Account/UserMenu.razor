@@ -1,0 +1,53 @@
+@using Microsoft.AspNetCore.Components.Routing
+@inject AccountsStatus Accounts
+@inject NavigationManager Nav
+@implements IDisposable
+
+@if (Accounts.Enabled)
+{
+    <AuthorizeView>
+        <Authorized>
+            <details class="usermenu">
+                <summary class="usermenu-btn" aria-label="Account menu">
+                    <span class="avatar">@Initial(context.User.Identity?.Name)</span>
+                    <span class="usermenu-name">@context.User.Identity?.Name</span>
+                </summary>
+                <div class="usermenu-pop">
+                    <div class="usermenu-head">Signed in as <b>@context.User.Identity?.Name</b></div>
+                    <a href="/account">Profile</a>
+                    <a href="/problems/mine">My Problems</a>
+                    <a href="/account/security">Account security</a>
+                    <form method="post" action="/account/logout">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="returnUrl" value="/" />
+                        <button type="submit">Sign out</button>
+                    </form>
+                </div>
+            </details>
+        </Authorized>
+        <NotAuthorized>
+            <a class="btn btn-sm signin-btn" href="@SignInHref">Sign in</a>
+        </NotAuthorized>
+    </AuthorizeView>
+}
+
+@code {
+    private string SignInHref
+    {
+        get
+        {
+            string here = "/" + Nav.ToBaseRelativePath(Nav.Uri);
+            return here.StartsWith("/account", StringComparison.OrdinalIgnoreCase) || here == "/"
+                ? "/account/login"
+                : $"/account/login?returnUrl={Uri.EscapeDataString(here)}";
+        }
+    }
+
+    private static string Initial(string? name) => string.IsNullOrEmpty(name) ? "?" : char.ToUpperInvariant(name[0]).ToString();
+
+    protected override void OnInitialized() => Nav.LocationChanged += OnLocationChanged;
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

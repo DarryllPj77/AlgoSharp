@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AlgoSharp: see your C# algorithms run</title>
+    <meta name="description" content="AlgoSharp: interactive, step-by-step visualizations of real C# data structures and algorithms, plus a sandboxed C# problem-solving playground." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23e7eaf0'/><text x='16' y='21' font-family='monospace' font-size='13' font-weight='700' text-anchor='middle' fill='%230b0d12'>A%23</text></svg>" />
+    <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+    <main>
+        <span class="mark">A<span>#</span></span>
+        <h1>See your C# algorithms <em>run</em>.</h1>
+        <p class="lede">
+            AlgoSharp animates real C# data structures and algorithms line by line, and lets you solve problems in
+            a browser editor whose code runs in an isolated sandbox, with a trace of what actually happened.
+        </p>
+        <!-- APP_URL: edit app-url.js to point at the container host that runs the Blazor Server app. -->
+        <a id="open" class="btn" href="#">Open AlgoSharp</a>
+        <p class="note">
+            This page is static and hosted on Vercel. The app itself (Blazor Server, its live connection and the
+            Docker code sandbox) runs on a separate container host.
+        </p>
+    </main>
+    <script src="/app-url.js"></script>
+</body>
+</html>

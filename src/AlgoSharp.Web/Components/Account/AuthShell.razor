@@ -1,0 +1,33 @@
+@* Frame for the account forms: a centred card with a heading, optional notice and the form. *@
+<div class="page auth-page">
+    <div class="auth-card @(Wide ? "wide" : "")">
+        <div class="auth-head">
+            <a class="logo-mark auth-mark" href="/" aria-label="AlgoSharp home">A<span>#</span></a>
+            <h1>@Title</h1>
+            @if (Subtitle is not null) { <p>@Subtitle</p> }
+        </div>
+        @if (!string.IsNullOrEmpty(Error))
+        {
+            <div class="auth-alert error" role="alert">@Error</div>
+        }
+        @if (!string.IsNullOrEmpty(Notice))
+        {
+            <div class="auth-alert ok" role="status">@Notice</div>
+        }
+        @ChildContent
+    </div>
+    @if (Footer is not null)
+    {
+        <div class="auth-foot">@Footer</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public string? Notice { get; set; }
+    [Parameter] public bool Wide { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+}

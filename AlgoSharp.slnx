@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/AlgoSharp.Accounts/AlgoSharp.Accounts.csproj" />
     <Project Path="src/AlgoSharp.Core/AlgoSharp.Core.csproj" />
     <Project Path="src/AlgoSharp.Playground/AlgoSharp.Playground.csproj" />
     <Project Path="src/AlgoSharp.Runner/AlgoSharp.Runner.csproj" />

@@ -1,0 +1,16 @@
+# Caddy terminates HTTPS (certificates are obtained automatically for $DOMAIN) and forwards to the
+# web app. WebSockets (used by Blazor Server) are proxied automatically.
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	reverse_proxy web:8080
+}

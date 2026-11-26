@@ -111,6 +111,26 @@ Enable execution (Docker Desktop with Linux containers must be running):
 
 Settings live under `Sandbox` in `appsettings.json` (`Mode: Docker|Disabled`, image, timeout, limits).
 
+## Accounts (optional)
+
+Sign up, sign in with a username or email, edit your profile, change your password and sign out of
+every device. Accounts use ASP.NET Core Identity on PostgreSQL (Neon): passwords are stored only as
+salted hashes, sign-in cookies are HttpOnly (persistent only if you tick "Keep me signed in"), five
+wrong passwords lock an account for 15 minutes, and account forms are rate-limited.
+
+Your problem library still lives in your browser, not on the server. Each account gets its own
+library on that browser; the guest library you had before signing in is never changed, and My
+Problems offers to copy it into your account.
+
+Accounts are off until a database is configured; everything else works without them:
+
+```powershell
+dotnet user-secrets set "ConnectionStrings:AlgoSharp" "postgresql://USER:PASSWORD@HOST/DB?sslmode=require" --project src/AlgoSharp.Web
+```
+
+Hosting, migrations, Docker Compose, health checks and the optional Vercel landing page are covered
+in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 ## How it works
 
 ```

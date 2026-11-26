@@ -1,6 +1,7 @@
 @page "/problems/mine"
 @inject LocalLibrary Library
 @inject NavigationManager Nav
+@inject AccountsStatus AccountsOn
 
 <PageTitle>My Problems · AlgoSharp</PageTitle>
 
@@ -17,7 +18,15 @@
                 <a class="btn btn-ghost" href="/problems">Practice set</a>
             </div>
             <p class="field-hint local-note">
-                Stored only in this browser (IndexedDB), for this browser profile. It isn't synced, and clearing this site's data or using another browser
+                @if (owner is { IsGuest: false })
+                {
+                    <span>Library for <b>@owner.UserName</b> on this browser. </span>
+                }
+                else
+                {
+                    <span>Guest library (not signed in).@if (AccountsOn.Enabled) { <text> <a href="/account/login?returnUrl=%2Fproblems%2Fmine">Sign in</a> to keep a separate library per account.</text> } </span>
+                }
+                Stored only in this browser (IndexedDB), not on AlgoSharp's servers. It isn't synced, and clearing this site's data or using another browser
                 means you won't see it. Export a backup regularly.
             </p>
         </section>
@@ -29,6 +38,18 @@
         @if (error is not null)
         {
             <div class="message error" style="margin-bottom:14px"><span class="step-no">storage</span><p>@error</p></div>
+        }
+
+        @if (guestOnly is { Count: > 0 } && !guestDismissed)
+        {
+            <div class="guest-banner" role="region" aria-label="Guest library">
+                <div>
+                    <b>@guestOnly.Count problem@(guestOnly.Count == 1 ? "" : "s") from this browser's guest library</b> aren't in your account's library yet.
+                    Copying keeps the guest library as it is and never overwrites problems you already have.
+                </div>
+                <button class="btn btn-sm btn-primary" @onclick="CopyGuest" disabled="@copying">@(copying ? "Copying…" : "Copy to my library")</button>
+                <button class="btn btn-sm btn-ghost" @onclick="DismissGuest">Not now</button>
+            </div>
         }
 
         @if (problems is null)
@@ -131,8 +152,40 @@
         StateHasChanged();
     }
 
+    private LibraryOwner? owner;
+    private List<UserProblem>? guestOnly;
+    private bool guestDismissed, copying;
+
+    private async Task CopyGuest()
+    {
+        copying = true;
+        var r = await Library.CopyGuestLibraryAsync();
+        copying = false;
+        if (!r.Ok)
+        {
+            error = r.Error;
+            return;
+        }
+        notice = $"Copied {r.Value} problem{(r.Value == 1 ? "" : "s")} from the guest library. The guest library itself is unchanged.";
+        await Load();
+    }
+
+    private async Task DismissGuest()
+    {
+        guestDismissed = true;
+        await Library.SetPrefAsync("guest-copy-dismissed", (guestOnly?.Count ?? 0).ToString());
+    }
+
     private async Task Load()
     {
+        owner = await Library.OwnerAsync();
+        if (!owner.IsGuest)
+        {
+            var guest = await Library.GuestOnlyProblemsAsync();
+            guestOnly = guest.Ok ? guest.Value : null;
+            // "Not now" hides the offer until more guest problems appear.
+            guestDismissed = int.TryParse(await Library.PrefAsync("guest-copy-dismissed"), out int seen) && (guestOnly?.Count ?? 0) <= seen;
+        }
         var p = await Library.ProblemsAsync();
         var g = await Library.ProgressAsync();
         if (!p.Ok || !g.Ok)

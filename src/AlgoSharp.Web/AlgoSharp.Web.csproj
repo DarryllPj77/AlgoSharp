@@ -1,8 +1,9 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
     <ProjectReference Include="..\AlgoSharp.Core\AlgoSharp.Core.csproj" />
     <ProjectReference Include="..\AlgoSharp.Playground\AlgoSharp.Playground.csproj" />
+    <ProjectReference Include="..\AlgoSharp.Accounts\AlgoSharp.Accounts.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -10,6 +11,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <UserSecretsId>78ada1e9-8127-46d6-9548-b364f85fc082</UserSecretsId>
   </PropertyGroup>
 
 </Project>

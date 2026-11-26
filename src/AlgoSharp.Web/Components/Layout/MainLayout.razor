@@ -17,12 +17,23 @@
             <NavLink href="/visualize/stack">Stacks &amp; Queues</NavLink>
         </nav>
         <div class="topbar-right">
-            <button class="icon-btn" title="Toggle light / dark" aria-label="Toggle color theme" @onclick="ToggleTheme">
-                <Icon Name="@(theme == "dark" ? "sun" : "moon")" />
-            </button>
+            @if (RendererInfo.IsInteractive)
+            {
+                <button class="icon-btn" title="Toggle light / dark" aria-label="Toggle color theme" @onclick="ToggleTheme">
+                    <Icon Name="@(theme == "dark" ? "sun" : "moon")" />
+                </button>
+            }
+            else
+            {
+                @* Server-rendered pages (account forms) have no circuit: forms.js handles this button. *@
+                <button class="icon-btn theme-static" type="button" title="Toggle light / dark" aria-label="Toggle color theme" data-theme-toggle>
+                    <span class="if-dark"><Icon Name="sun" /></span><span class="if-light"><Icon Name="moon" /></span>
+                </button>
+            }
             <a class="icon-btn" href="https://github.com/DarryllPj77/AlgoSharp" target="_blank" rel="noopener" title="Source on GitHub" aria-label="Source on GitHub">
                 <Icon Name="github" />
             </a>
+            <UserMenu />
         </div>
     </div>
 </header>

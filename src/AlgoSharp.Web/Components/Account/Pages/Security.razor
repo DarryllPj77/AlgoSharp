@@ -1,0 +1,80 @@
+@page "/account/security"
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [Authorize]
+@using System.ComponentModel.DataAnnotations
+@inherits AccountForm<Security.Model>
+
+<PageTitle>Account security · AlgoSharp</PageTitle>
+
+<AuthShell Title="Account security" Wide Error="@FormError">
+    <ChildContent>
+        @if (user is not null)
+        {
+            <h2 class="auth-h2">Sign-in</h2>
+            <dl class="facts">
+                <div><dt>Password last changed</dt><dd>@if (user.PasswordChangedAt is { } p) { <LocalTime Value="p" /> } else { <span>—</span> }</dd></div>
+                <div><dt>Last successful sign-in</dt><dd>@if (user.LastSignInAt is { } s) { <LocalTime Value="s" /> } else { <span>—</span> }</dd></div>
+                <div><dt>Recent failed attempts</dt><dd>@user.AccessFailedCount of @AccountRules.MaxFailedSignIns before a @(AccountRules.LockoutDuration.TotalMinutes)-minute lock</dd></div>
+                <div><dt>Lock status</dt><dd>@(user.LockoutEnd is { } end && end > DateTimeOffset.UtcNow ? $"Locked until {end.UtcDateTime:HH:mm} UTC" : "Not locked")</dd></div>
+                <div><dt>This session</dt><dd>@(persistent ? "Kept signed in on this device" : "Ends when you close the browser")</dd></div>
+            </dl>
+
+            <h2 class="auth-h2">Not available yet</h2>
+            <p class="auth-text muted">These are planned and are not active, so nothing here pretends otherwise:</p>
+            <ul class="planned">
+                <li><b>Email verification</b><span>Your email (@user.Email) is stored but not verified. No email is sent.</span></li>
+                <li><b>Password recovery</b><span>There's no reset-by-email yet. Keep your password somewhere safe.</span></li>
+                <li><b>Two-factor authentication</b><span>Not offered yet.</span></li>
+                <li><b>Per-device session list</b><span>Use “Sign out everywhere” below to end every session at once.</span></li>
+            </ul>
+
+            <h2 class="auth-h2">Sign out everywhere</h2>
+            <p class="auth-text muted">Ends every signed-in session for this account, on all devices and browsers (open tabs within about 5 minutes), including this one.</p>
+            <EditForm EditContext="Edit" method="post" FormName="sign-out-everywhere" OnValidSubmit="SignOutEverywhere" OnInvalidSubmit="ClearSecrets" novalidate>
+                <DataAnnotationsValidator />
+                <div class="reauth">
+                    <PasswordField Id="current" Label="Current password" @bind-Value="Input!.CurrentPassword" Autocomplete="current-password" />
+                </div>
+                <div class="auth-actions">
+                    <button type="submit" class="btn btn-danger">Sign out everywhere</button>
+                    <a class="btn btn-ghost" href="/account">Back to profile</a>
+                </div>
+            </EditForm>
+        }
+    </ChildContent>
+</AuthShell>
+
+@code {
+    public sealed class Model
+    {
+        [Required(ErrorMessage = "Enter your current password to confirm.")]
+        public string? CurrentPassword { get; set; } = "";
+    }
+
+    private AppUser? user;
+    private bool persistent;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            user = await Accounts.CurrentAsync(HttpContext.User);
+            if (user is null) FormError = "Your session has ended. Please sign in again.";
+        }
+        catch (Exception ex) when (AccountService.IsDatabaseFailure(ex))
+        {
+            FormError = AccountService.Unavailable;
+        }
+        var auth = await Microsoft.AspNetCore.Authentication.AuthenticationHttpContextExtensions.AuthenticateAsync(HttpContext);
+        persistent = auth.Properties?.IsPersistent == true;
+    }
+
+    private async Task SignOutEverywhere()
+    {
+        string password = Input!.CurrentPassword ?? "";
+        Input.CurrentPassword = "";
+        var result = await Accounts.SignOutEverywhereAsync(HttpContext.User, password);
+        if (result.Succeeded) Nav.NavigateTo("/account/login?done=everywhere", forceLoad: true);
+        else Show(result);
+    }
+}

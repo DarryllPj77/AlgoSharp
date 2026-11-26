@@ -1,0 +1,77 @@
+@page "/account/edit"
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [Authorize]
+@using System.ComponentModel.DataAnnotations
+@inherits AccountForm<EditProfile.Model>
+
+<PageTitle>Edit profile · AlgoSharp</PageTitle>
+
+<AuthShell Title="Edit profile" Subtitle="Change how you sign in. Your current password is required to save." Error="@FormError">
+    <ChildContent>
+        <EditForm EditContext="Edit" method="post" FormName="edit-profile" OnValidSubmit="Save" OnInvalidSubmit="ClearSecrets" novalidate>
+            <DataAnnotationsValidator />
+            <div class="field">
+                <label for="username">Username</label>
+                <InputText id="username" @bind-Value="Input!.UserName" autocomplete="username" maxlength="32" />
+                <ValidationMessage For="() => Input!.UserName" class="field-error" />
+            </div>
+            <div class="field">
+                <label for="email">Email</label>
+                <InputText id="email" type="email" @bind-Value="Input!.Email" autocomplete="email" maxlength="256" />
+                <ValidationMessage For="() => Input!.Email" class="field-error" />
+            </div>
+            <div class="reauth">
+                <PasswordField Id="current" Label="Current password" @bind-Value="Input!.CurrentPassword" Autocomplete="current-password"
+                               Hint="Confirms it's you before changing how you sign in." />
+            </div>
+            <div class="auth-actions">
+                <button type="submit" class="btn btn-primary">Save changes</button>
+                <a class="btn btn-ghost" href="/account">Cancel</a>
+            </div>
+        </EditForm>
+    </ChildContent>
+</AuthShell>
+
+@code {
+    public sealed class Model
+    {
+        [Required(ErrorMessage = "Choose a username.")]
+        [StringLength(AccountRules.UserNameMax, MinimumLength = AccountRules.UserNameMin, ErrorMessage = AccountRules.UserNameRule)]
+        [RegularExpression(@"^[A-Za-z0-9_.\-]+$", ErrorMessage = AccountRules.UserNameRule)]
+        public string UserName { get; set; } = "";
+
+        [Required(ErrorMessage = "Enter an email address.")]
+        [EmailAddress(ErrorMessage = "That doesn't look like an email address (name@example.com).")]
+        [StringLength(256)]
+        public string Email { get; set; } = "";
+
+        [Required(ErrorMessage = "Enter your current password to confirm.")]
+        public string? CurrentPassword { get; set; } = "";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpMethods.IsPost(HttpContext.Request.Method)) return;
+        try
+        {
+            if (await Accounts.CurrentAsync(HttpContext.User) is { } user)
+            {
+                Input!.UserName = user.UserName ?? "";
+                Input.Email = user.Email ?? "";
+            }
+        }
+        catch (Exception ex) when (AccountService.IsDatabaseFailure(ex))
+        {
+            FormError = AccountService.Unavailable;
+        }
+    }
+
+    private async Task Save()
+    {
+        string password = Input!.CurrentPassword ?? "";
+        Input.CurrentPassword = "";
+        var result = await Accounts.UpdateProfileAsync(HttpContext.User, Input.UserName, Input.Email, password);
+        if (result.Succeeded) Nav.NavigateTo("/account?done=profile", forceLoad: true);
+        else Show(result);
+    }
+}

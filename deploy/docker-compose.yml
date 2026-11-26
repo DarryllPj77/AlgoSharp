@@ -1,0 +1,88 @@
+# AlgoSharp on one Linux VM: Caddy (HTTPS) -> web (Blazor Server) -> host Docker -> runner containers.
+#
+#   cp deploy/.env.example deploy/.env   # then fill in the values (never commit .env)
+#   docker compose -f deploy/docker-compose.yml --profile build build runner   # sandbox image
+#   docker compose -f deploy/docker-compose.yml run --rm migrate               # apply DB migrations
+#   docker compose -f deploy/docker-compose.yml up -d
+#
+# See docs/DEPLOYMENT.md for the full walkthrough and the security trade-offs.
+name: algosharp
+
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+    image: algosharp-web:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # Cookie/antiforgery key ring survives restarts and redeploys.
+      DataProtection__KeysPath: /keys
+    # Lets the web app start sandbox containers on this host. This is powerful access (root-equivalent
+    # on the VM), which is why the app only ever issues one fixed, locked-down `docker run`, and why
+    # the VM should run nothing else important. See docs/DEPLOYMENT.md.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dp-keys:/keys
+    group_add:
+      - "${DOCKER_GID:-999}"
+    expose:
+      - "8080"
+    networks: [edge]
+    depends_on:
+      runner-image-check:
+        condition: service_completed_successfully
+
+  # Fails fast with a clear message if the sandbox image hasn't been built on this host.
+  runner-image-check:
+    image: docker:28-cli
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: ["sh", "-c", "docker image inspect algosharp-runner:1 >/dev/null || { echo 'Build the sandbox image first: docker compose -f deploy/docker-compose.yml --profile build build runner'; exit 1; }"]
+    restart: "no"
+
+  # Applies pending EF Core migrations, then exits. Run explicitly once per release.
+  migrate:
+    image: algosharp-web:latest
+    env_file: .env
+    command: ["--migrate"]
+    entrypoint: ["dotnet", "AlgoSharp.Web.dll"]
+    profiles: ["tools"]
+    restart: "no"
+
+  # Builds algosharp-runner:1 (the image user code runs in). Never started as a service.
+  runner:
+    build:
+      context: ..
+      dockerfile: deploy/runner.Dockerfile
+    image: algosharp-runner:1
+    profiles: ["build"]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [edge]
+    depends_on: [web]
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  dp-keys:
+  caddy-data:
+  caddy-config:

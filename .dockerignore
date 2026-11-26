@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+**/.vs/
+**/node_modules/
+.git/
+.claude/
+sandbox/runner/
+tests/
+**/*.user
+**/.env
+deploy/.env
+**/appsettings.*.local.json

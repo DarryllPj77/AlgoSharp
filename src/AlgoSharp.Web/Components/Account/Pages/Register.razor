@@ -1,0 +1,89 @@
+@page "/account/register"
+@attribute [ExcludeFromInteractiveRouting]
+@using System.ComponentModel.DataAnnotations
+@inherits AccountForm<Register.Model>
+
+<PageTitle>Create account · AlgoSharp</PageTitle>
+
+<AuthShell Title="Create your account" Subtitle="Free, and optional: everything works without one." Error="@FormError">
+    <ChildContent>
+        @if (!Accounts.Enabled)
+        {
+            <p class="auth-text">@AccountService.NotConfigured</p>
+        }
+        else if (HttpContext.User.Identity?.IsAuthenticated == true)
+        {
+            <p class="auth-text">You're already signed in as <b>@HttpContext.User.Identity.Name</b>.</p>
+            <div class="auth-actions"><a class="btn btn-primary" href="/account">Your profile</a></div>
+        }
+        else
+        {
+            <EditForm EditContext="Edit" method="post" FormName="register" OnValidSubmit="Create" OnInvalidSubmit="ClearSecrets" novalidate>
+                <DataAnnotationsValidator />
+                <div class="field">
+                    <label for="username">Username</label>
+                    <InputText id="username" @bind-Value="Input!.UserName" autocomplete="username" autofocus maxlength="32" />
+                    <span class="field-hint">3–32 characters: letters, digits, <code>_</code> <code>.</code> <code>-</code></span>
+                    <ValidationMessage For="() => Input!.UserName" class="field-error" />
+                </div>
+                <div class="field">
+                    <label for="email">Email</label>
+                    <InputText id="email" type="email" @bind-Value="Input!.Email" autocomplete="email" maxlength="256" />
+                    <span class="field-hint">Used to sign in. Not verified yet, and we don't send email.</span>
+                    <ValidationMessage For="() => Input!.Email" class="field-error" />
+                </div>
+                <PasswordField Id="password" Label="Password" @bind-Value="Input!.Password" Autocomplete="new-password"
+                               Hint="@($"At least {AccountRules.PasswordMin} characters, with a letter and a digit.")" />
+                <PasswordField Id="confirm" Label="Confirm password" @bind-Value="Input!.ConfirmPassword" Autocomplete="new-password" MatchId="password" />
+                <button type="submit" class="btn btn-primary auth-submit">Create account</button>
+                <p class="auth-fine">Your saved problems stay in this browser. After signing up you can copy problems you saved as a guest into your account's library.</p>
+            </EditForm>
+        }
+    </ChildContent>
+    <Footer>
+        <span>Already have an account? <a href="@LoginHref">Sign in</a></span>
+    </Footer>
+</AuthShell>
+
+@code {
+    public sealed class Model
+    {
+        [Required(ErrorMessage = "Choose a username.")]
+        [StringLength(AccountRules.UserNameMax, MinimumLength = AccountRules.UserNameMin, ErrorMessage = AccountRules.UserNameRule)]
+        [RegularExpression(@"^[A-Za-z0-9_.\-]+$", ErrorMessage = AccountRules.UserNameRule)]
+        public string UserName { get; set; } = "";
+
+        [Required(ErrorMessage = "Enter an email address.")]
+        [EmailAddress(ErrorMessage = "That doesn't look like an email address (name@example.com).")]
+        [StringLength(256)]
+        public string Email { get; set; } = "";
+
+        [Required(ErrorMessage = "Choose a password.")]
+        [StringLength(128, MinimumLength = AccountRules.PasswordMin, ErrorMessage = "Passwords need at least 8 characters.")]
+        public string? Password { get; set; } = "";
+
+        [Required(ErrorMessage = "Type the password again.")]
+        [Compare(nameof(Password), ErrorMessage = "The passwords don't match.")]
+        public string? ConfirmPassword { get; set; } = "";
+    }
+
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    private string LoginHref => ReturnUrl is null ? "/account/login" : $"/account/login?returnUrl={Uri.EscapeDataString(AlgoSharp.Accounts.ReturnUrl.Safe(ReturnUrl))}";
+
+    private async Task Create()
+    {
+        string password = Input!.Password ?? "";
+        Input.Password = Input.ConfirmPassword = "";
+        var result = await Accounts.RegisterAsync(Input.UserName, Input.Email, password);
+        if (!result.Succeeded)
+        {
+            Show(result);
+            return;
+        }
+        // New accounts start with a browser-session cookie; "keep me signed in" is chosen at sign-in.
+        var signIn = await Accounts.SignInAsync(Input.UserName, password, remember: false);
+        string next = AlgoSharp.Accounts.ReturnUrl.Safe(ReturnUrl, "/account?done=welcome");
+        Nav.NavigateTo(signIn == SignInOutcome.Succeeded ? next : "/account/login", forceLoad: true);
+    }
+}

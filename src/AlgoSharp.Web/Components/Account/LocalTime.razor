@@ -1,0 +1,6 @@
+@* Server-rendered timestamps are in UTC; the <time> element carries the exact instant for tooltips. *@
+<time datetime="@Value.ToString("O")" title="@Value.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'")">@Value.UtcDateTime.ToString("MMM d, yyyy")</time>
+
+@code {
+    [Parameter, EditorRequired] public DateTimeOffset Value { get; set; }
+}

@@ -1,0 +1,65 @@
+@page "/account"
+@attribute [ExcludeFromInteractiveRouting]
+@attribute [Authorize]
+@inject AccountService Accounts
+
+<PageTitle>Your profile · AlgoSharp</PageTitle>
+
+<AuthShell Title="Your profile" Wide Error="@error" Notice="@Notice">
+    @if (user is not null)
+    {
+        <div class="profile-id">
+            <span class="avatar big">@char.ToUpperInvariant(user.UserName![0])</span>
+            <div>
+                <div class="profile-name">@user.UserName</div>
+                <div class="profile-email">@user.Email</div>
+            </div>
+        </div>
+        <dl class="facts">
+            <div><dt>Username</dt><dd>@user.UserName</dd></div>
+            <div><dt>Email</dt><dd>@user.Email <span class="tag">not verified</span></dd></div>
+            <div><dt>Member since</dt><dd><LocalTime Value="user.CreatedAt" /></dd></div>
+            <div><dt>Last sign-in</dt><dd>@if (user.LastSignInAt is { } at) { <LocalTime Value="at" /> } else { <span>—</span> }</dd></div>
+        </dl>
+        <nav class="account-links">
+            <a href="/account/edit"><b>Edit profile</b><span>Change your username or email</span></a>
+            <a href="/account/password"><b>Change password</b><span>Requires your current password</span></a>
+            <a href="/account/security"><b>Account security</b><span>Sign-in activity, lockout, sign out everywhere</span></a>
+            <a href="/problems/mine"><b>My Problems</b><span>Your personal library on this browser</span></a>
+        </nav>
+        <form method="post" action="/account/logout" class="auth-actions end">
+            <AntiforgeryToken />
+            <input type="hidden" name="returnUrl" value="/account/login?done=signedout" />
+            <button type="submit" class="btn">Sign out</button>
+        </form>
+    }
+</AuthShell>
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+    [SupplyParameterFromQuery(Name = "done")] private string? Done { get; set; }
+
+    private AppUser? user;
+    private string? error;
+
+    private string? Notice => Done switch
+    {
+        "welcome" => "Your account is ready. Problems you import from now on are saved to this account's library on this browser.",
+        "profile" => "Profile updated.",
+        "password" => "Password changed. Other devices have been signed out.",
+        _ => null,
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            user = await Accounts.CurrentAsync(HttpContext.User);
+            if (user is null) error = "Your session has ended. Please sign in again.";
+        }
+        catch (Exception ex) when (AccountService.IsDatabaseFailure(ex))
+        {
+            error = AccountService.Unavailable;
+        }
+    }
+}
