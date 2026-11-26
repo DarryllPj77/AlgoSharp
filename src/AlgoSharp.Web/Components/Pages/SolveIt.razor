@@ -41,6 +41,28 @@ else
                             <h1>@(up.Level is int lv ? $"Level {lv}: " : "")@up.Title</h1>
                             <span class="pill">@(up.Difficulty ?? "Unrated")</span>
                             <span class="status-chip s-@Status.ToString().ToLowerInvariant()">@StatusLabel</span>
+                            @if (navCount > 1)
+                            {
+                                <div class="pnav-mini" aria-label="Problem navigation">
+                                    @if (prevLink is { } pl)
+                                    {
+                                        <a class="pnav-step" href="@pl.Href" title="Previous: @pl.Title" aria-label="Previous problem: @pl.Title">‹</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="pnav-step disabled" aria-hidden="true">‹</span>
+                                    }
+                                    <span class="pnav-pos">@(navIndex + 1) / @navCount</span>
+                                    @if (nextLink is { } nl)
+                                    {
+                                        <a class="pnav-next @(Status == ProblemStatus.Solved || AllPassed ? "ready" : "")" href="@nl.Href" title="Next: @nl.Title">Next <span aria-hidden="true">›</span></a>
+                                    }
+                                    else
+                                    {
+                                        <span class="pnav-next disabled">Last problem</span>
+                                    }
+                                </div>
+                            }
                         </div>
                     }
                     else
@@ -49,6 +71,28 @@ else
                         <div class="viz-title">
                             <h1>@problem.Number. @problem.Title</h1>
                             <span class="pill">@problem.Difficulty</span>
+                            @if (navCount > 1)
+                            {
+                                <div class="pnav-mini" aria-label="Problem navigation">
+                                    @if (prevLink is { } pl)
+                                    {
+                                        <a class="pnav-step" href="@pl.Href" title="Previous: @pl.Title" aria-label="Previous problem: @pl.Title">‹</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="pnav-step disabled" aria-hidden="true">‹</span>
+                                    }
+                                    <span class="pnav-pos">@(navIndex + 1) / @navCount</span>
+                                    @if (nextLink is { } nl)
+                                    {
+                                        <a class="pnav-next @(Status == ProblemStatus.Solved || AllPassed ? "ready" : "")" href="@nl.Href" title="Next: @nl.Title">Next <span aria-hidden="true">›</span></a>
+                                    }
+                                    else
+                                    {
+                                        <span class="pnav-next disabled">Last problem</span>
+                                    }
+                                </div>
+                            }
                         </div>
                     }
                 </div>
@@ -409,6 +453,47 @@ else
                 </div>
             </div>
         </div>
+
+        @if (navCount > 1)
+        {
+            <nav class="pnav" aria-label="Problem navigation">
+                @if (prevLink is { } prev)
+                {
+                    <a class="pnav-card prev" href="@prev.Href">
+                        <small>← Previous</small>
+                        <span>@prev.Title</span>
+                    </a>
+                }
+                else
+                {
+                    <span class="pnav-card placeholder"></span>
+                }
+                <div class="pnav-middle">
+                    <span>Problem @(navIndex + 1) of @navCount</span>
+                    <small>@navScope</small>
+                    <div class="pnav-dots" aria-hidden="true">
+                        @for (int k = 0; k < navCount && navCount <= 30; k++)
+                        {
+                            <i class="@(k == navIndex ? "on" : "")"></i>
+                        }
+                    </div>
+                </div>
+                @if (nextLink is { } next)
+                {
+                    <a class="pnav-card next @(Status == ProblemStatus.Solved || AllPassed ? "ready" : "")" href="@next.Href">
+                        <small>@(Status == ProblemStatus.Solved || AllPassed ? "Nice work! Up next →" : "Next problem →")</small>
+                        <span>@next.Title</span>
+                    </a>
+                }
+                else
+                {
+                    <a class="pnav-card next done" href="@(userProblem is null ? "/problems" : "/problems/mine")">
+                        <small>You've reached the end</small>
+                        <span>Back to @(userProblem is null ? "all problems" : "My Problems")</span>
+                    </a>
+                }
+            </nav>
+        }
     </div>
 }
 
@@ -424,6 +509,15 @@ else
     private bool pendingUserLoad;
     private string? storageError;
     private string draftState = "";
+
+    private sealed record ProblemLink(string Href, string Title);
+
+    private ProblemLink? prevLink, nextLink;
+    private int navIndex, navCount;
+    private string navScope = "";
+
+    /// <summary>True when the latest run had graded cases and all of them passed.</summary>
+    private bool AllPassed => run is { } r && r.Cases.Any(c => c.Verdict?.Graded == true) && r.Cases.Where(c => c.Verdict?.Graded == true).All(c => c.Verdict!.Passed);
 
     private ProblemStatus Status => progress?.Status ?? ProblemStatus.NotStarted;
     private string StatusLabel => Status switch { ProblemStatus.InProgress => "In progress", ProblemStatus.Solved => "Solved", _ => "Not started" };
@@ -461,7 +555,22 @@ else
     {
         string key = Id is null ? Slug : "mine/" + Id;
         if (loadedSlug == key) return;
+        if (userProblem is not null && editor is not null)
+        {
+            try
+            {
+                string latest = await editor.InvokeAsync<string>("getValue");
+                if (latest != progress?.Draft)
+                {
+                    code = latest;
+                    await SaveDraft();
+                }
+            }
+            catch (JSDisconnectedException) { }
+        }
         loadedSlug = key;
+        prevLink = nextLink = null;
+        navIndex = navCount = 0;
         userProblem = null;
         setup = null;
         progress = null;
@@ -470,6 +579,17 @@ else
         if (Id is not null)
         {
             // Personal problems live in IndexedDB, which is only reachable after the first render.
+            // The editor's element is removed while loading, so release it; it's recreated afterwards.
+            if (editor is not null)
+            {
+                try
+                {
+                    await editor.InvokeVoidAsync("dispose");
+                    await editor.DisposeAsync();
+                }
+                catch (JSDisconnectedException) { }
+                editor = null;
+            }
             problem = null;
             run = null;
             player.Load([], false);
@@ -477,6 +597,16 @@ else
             return;
         }
         problem = PlaygroundCatalog.Find(Slug);
+        if (problem is not null)
+        {
+            var all = PlaygroundCatalog.All;
+            int at = all.ToList().FindIndex(p => p.Slug == problem.Slug);
+            navIndex = at;
+            navCount = all.Count;
+            navScope = "Practice set";
+            prevLink = at > 0 ? new($"/problems/{all[at - 1].Slug}", all[at - 1].Title) : null;
+            nextLink = at + 1 < all.Count ? new($"/problems/{all[at + 1].Slug}", all[at + 1].Title) : null;
+        }
         run = null;
         hintsShown = 0;
         caseError = null;
@@ -487,7 +617,7 @@ else
         foreach (var p in problem.Params) newArgs[p.Name] = p.Placeholder;
         code = problem.StarterCode;
         compile = PlaygroundService.Check(problem, code);
-        advice = null;
+        RefreshAdvice();
         if (editor is not null)
         {
             try { await editor.InvokeVoidAsync("setValue", code); await PushMarkers(); } catch (JSDisconnectedException) { }
@@ -505,12 +635,12 @@ else
             return;
         }
         if (problem is null) return;
-        if (editor is null && module is null)
+        if (editor is null && editorError is null)
         {
             try
             {
-                selfRef = DotNetObjectReference.Create(this);
-                module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/editor.js");
+                selfRef ??= DotNetObjectReference.Create(this);
+                module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/editor.js");
                 editor = await module.InvokeAsync<IJSObjectReference>("create", editorHost, code, selfRef);
                 await PushMarkers();
             }
@@ -541,6 +671,21 @@ else
         }
         userProblem = r.Value!;
         setup = UserProblemAdapter.ToPlayground(userProblem);
+        var siblings = await Library.ProblemsAsync();
+        if (siblings.Ok)
+        {
+            var list = siblings.Value!
+                .Where(x => x.Collection == userProblem.Collection)
+                .OrderBy(x => x.Level ?? int.MaxValue).ThenBy(x => x.Title)
+                .ToList();
+            int at = list.FindIndex(x => x.Id == userProblem.Id);
+            navIndex = at;
+            navCount = list.Count;
+            navScope = userProblem.Collection.Length > 0 ? userProblem.Collection : "Uncategorized";
+            static string Name(UserProblem x) => (x.Level is int l ? $"Level {l}: " : "") + x.Title;
+            prevLink = at > 0 ? new($"/problems/mine/{list[at - 1].Id}", Name(list[at - 1])) : null;
+            nextLink = at >= 0 && at + 1 < list.Count ? new($"/problems/mine/{list[at + 1].Id}", Name(list[at + 1])) : null;
+        }
         problem = setup.Problem;
         var g = await Library.ProgressAsync(Id!);
         progress = g.Value ?? new ProblemProgress { ProblemId = Id! };
@@ -551,6 +696,7 @@ else
         code = string.IsNullOrEmpty(progress.Draft) ? problem.StarterCode : progress.Draft;
         draftState = string.IsNullOrEmpty(progress.Draft) ? "" : "Draft restored";
         compile = PlaygroundService.Check(problem, code);
+        RefreshAdvice();
         run = null;
         hintsShown = 0;
         if (editor is not null)
@@ -585,6 +731,15 @@ else
         }
     }
 
+    /// <summary>Explains the code's approach as soon as it compiles; a run adds measured observations.</summary>
+    private void RefreshAdvice()
+    {
+        if (run is not null && run.Compile == compile) return;
+        advice = compile is { Success: true, Tree: not null, MethodName: not null } c && problem is not null
+            ? CodeAdvisor.Analyze(c.Tree, c.MethodName, [], problem.Hints.Count)
+            : null;
+    }
+
     private async Task ToggleSolved() => await SaveDraft(Status == ProblemStatus.Solved ? ProblemStatus.InProgress : ProblemStatus.Solved);
 
     [JSInvokable]
@@ -593,6 +748,7 @@ else
         if (editor is null || problem is null) return;
         code = await editor.InvokeAsync<string>("getValue");
         compile = PlaygroundService.Check(problem, code);
+        RefreshAdvice();
         await PushMarkers();
         await SaveDraft();
         StateHasChanged();
@@ -661,6 +817,7 @@ else
         code = problem.StarterCode;
         if (editor is not null) await editor.InvokeVoidAsync("setValue", code);
         compile = PlaygroundService.Check(problem, code);
+        RefreshAdvice();
         await PushMarkers();
         await SaveDraft();
     }
