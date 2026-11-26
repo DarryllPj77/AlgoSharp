@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Globalization;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 
 namespace AlgoSharp.Tracing;
@@ -169,6 +170,13 @@ public static class Tr
         return value;
     }
 
+    public static char Read(string text, int index, string textName, string? indexName)
+    {
+        char value = text[index];
+        Access(text, "read", index.ToString(CultureInfo.InvariantCulture), indexName, null);
+        return value;
+    }
+
     public static TValue ReadKey<TKey, TValue>(Dictionary<TKey, TValue> map, TKey key, string mapName) where TKey : notnull
     {
         Access(map, "read", Text(key), null, map.ContainsKey(key));
@@ -235,13 +243,39 @@ public static class Tr
     /// <summary>Human-readable form of a captured value, e.g. [0, 1] or {2: 0}.</summary>
     public static string Format(TraceValue v) => v.Kind switch
     {
-        "array" or "list" or "set" or "stack" or "queue" => "[" + string.Join(", ", v.Items ?? []) + (v.Truncated ? ", …" : "") + "]",
+        "array" or "list" or "set" or "stack" or "queue" or "heap" => "[" + string.Join(", ", v.Items ?? []) + (v.Truncated ? ", …" : "") + "]",
+        "listnode" => string.Join(" → ", ListValues(v)) + " → null",
+        "treenode" => $"tree rooted at {v.Text}",
         "dict" => "{" + string.Join(", ", (v.Entries ?? []).Select(e => $"{e.Key}: {e.Value}")) + (v.Truncated ? ", …" : "") + "}",
         _ => v.Text ?? v.Kind,
     };
 
-    private static List<TraceVar> Snapshot(Frame frame) =>
-        frame.Order.Select(name => new TraceVar(name, Describe(frame.Vars[name]))).ToList();
+    private static List<TraceVar> Snapshot(Frame frame)
+    {
+        var vars = new List<TraceVar>();
+        foreach (var name in frame.Order)
+        {
+            var value = frame.Vars[name];
+            if (name == "this" && value is not null) vars.AddRange(Fields(value));
+            else vars.Add(new TraceVar(name, Describe(value)));
+        }
+        return vars;
+    }
+
+    private static IEnumerable<string> ListValues(TraceValue v)
+    {
+        var byRef = (v.Nodes ?? []).ToDictionary(n => n.Ref);
+        var seen = new HashSet<int>();
+        for (int r = v.Ref; r != 0 && byRef.TryGetValue(r, out var n); r = n.Next)
+        {
+            if (!seen.Add(r))
+            {
+                yield return "(cycle)";
+                yield break;
+            }
+            yield return n.Value;
+        }
+    }
 
     private static int RefOf(object o)
     {
@@ -255,9 +289,11 @@ public static class Tr
     {
         null => "null",
         string s => "\"" + (s.Length > 40 ? s[..40] + "…" : s) + "\"",
+        Array a when a.Rank == 1 => "[" + string.Join(", ", a.Cast<object?>().Take(12).Select(Text)) + (a.Length > 12 ? ", …" : "") + "]",
         char c => "'" + c + "'",
         bool b => b ? "true" : "false",
         IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
+        _ when ShapeOf(value.GetType()) is { Value: { } field } => "node " + Text(field.GetValue(value)),
         _ => value.GetType().Name,
     };
 
@@ -268,7 +304,9 @@ public static class Tr
         {
             case null:
                 return new TraceValue("null", "null");
-            case string or char or bool or Enum:
+            case string s:
+                return new TraceValue("scalar", Text(s), Ref: RefOf(s), Type: "string");
+            case char or bool or Enum:
             case IFormattable when value.GetType().IsPrimitive || value is decimal:
                 return new TraceValue("scalar", Text(value), Type: value.GetType().Name);
             case Array arr when arr.Rank == 1:
@@ -294,8 +332,96 @@ public static class Tr
                 };
                 return Sequence(kind, seq, value, TypeName(value));
             }
+            case not null when TypeBase(value) == "PriorityQueue" && value.GetType().Namespace == "System.Collections.Generic":
+                return Heap(value);
             default:
-                return new TraceValue("object", value.GetType().Name, Ref: RefOf(value), Type: value.GetType().Name);
+                return Linked(value) ?? new TraceValue("object", value.GetType().Name, Ref: RefOf(value), Type: value.GetType().Name);
+        }
+    }
+
+    // ---------------------------------------------------------------- linked structures & objects
+
+    private sealed record Shape(FieldInfo? Value, FieldInfo? Next, FieldInfo? Left, FieldInfo? Right);
+
+    private static readonly Dictionary<Type, Shape?> shapes = [];
+
+    /// <summary>Recognises list nodes (a field of its own type named next) and tree nodes (left/right).</summary>
+    private static Shape? ShapeOf(Type t)
+    {
+        if (shapes.TryGetValue(t, out var cached)) return cached;
+        var fields = t.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        FieldInfo? Self(string name) => fields.FirstOrDefault(f => f.FieldType == t && string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
+        var value = fields.FirstOrDefault(f => f.FieldType.IsPrimitive && f.Name.ToLowerInvariant() is "val" or "value" or "data" or "key");
+        var next = Self("next");
+        var left = Self("left");
+        var right = Self("right");
+        Shape? shape = next is not null || left is not null && right is not null ? new Shape(value, next, left, right) : null;
+        shapes[t] = shape;
+        return shape;
+    }
+
+    private static TraceValue? Linked(object root)
+    {
+        var shape = ShapeOf(root.GetType());
+        if (shape is null) return null;
+        var nodes = new List<TraceNode>();
+        var seen = new HashSet<int>();
+        var queue = new Queue<object>();
+        queue.Enqueue(root);
+        bool truncated = false;
+        while (queue.Count > 0)
+        {
+            var node = queue.Dequeue();
+            int id = RefOf(node);
+            if (!seen.Add(id)) continue;
+            if (nodes.Count >= MaxItems)
+            {
+                truncated = true;
+                break;
+            }
+            string text = shape.Value is null ? "•" : Text(shape.Value.GetValue(node));
+            if (shape.Next is not null)
+            {
+                var next = shape.Next.GetValue(node);
+                nodes.Add(new TraceNode(id, text, next is null ? 0 : RefOf(next), 0));
+                if (next is not null) queue.Enqueue(next);
+            }
+            else
+            {
+                var left = shape.Left!.GetValue(node);
+                var right = shape.Right!.GetValue(node);
+                nodes.Add(new TraceNode(id, text, left is null ? 0 : RefOf(left), right is null ? 0 : RefOf(right)));
+                if (left is not null) queue.Enqueue(left);
+                if (right is not null) queue.Enqueue(right);
+            }
+        }
+        string kind = shape.Next is not null ? "listnode" : "treenode";
+        return new TraceValue(kind, nodes[0].Value, Ref: RefOf(root), Type: root.GetType().Name, Truncated: truncated, Nodes: nodes);
+    }
+
+    /// <summary>PriorityQueue contents ordered by priority (BCL property read, no user code runs).</summary>
+    private static TraceValue Heap(object pq)
+    {
+        var unordered = pq.GetType().GetProperty("UnorderedItems")?.GetValue(pq) as IEnumerable;
+        var pairs = new List<(object? Element, object? Priority)>();
+        foreach (var item in unordered ?? Array.Empty<object>())
+        {
+            var t = item!.GetType();
+            pairs.Add((t.GetField("Item1")?.GetValue(item), t.GetField("Item2")?.GetValue(item)));
+            if (pairs.Count >= MaxItems) break;
+        }
+        pairs.Sort((a, b) => Comparer.Default.Compare(a.Priority, b.Priority));
+        var items = pairs.Select(p => Equals(p.Element, p.Priority) ? Text(p.Element) : $"{Text(p.Element)} ({Text(p.Priority)})").ToList();
+        return new TraceValue("heap", null, items, Ref: RefOf(pq), Type: TypeName(pq));
+    }
+
+    /// <summary>Fields of the current instance, shown like variables (e.g. a heap kept by a class).</summary>
+    private static IEnumerable<TraceVar> Fields(object self)
+    {
+        foreach (var f in self.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+        {
+            string name = f.Name.StartsWith('<') ? f.Name[1..f.Name.IndexOf('>')] : f.Name;
+            yield return new TraceVar("this." + name, Describe(f.GetValue(self)));
         }
     }
 

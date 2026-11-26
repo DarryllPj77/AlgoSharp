@@ -79,14 +79,14 @@
             <div class="section-head">
                 <div>
                     <h2>Problem solving</h2>
-                    <p>Compare a brute-force solution with an optimized one on the same input, step by step.</p>
+                    <p>Solve LeetCode-style problems in your own C# and step through what your code actually does.</p>
                 </div>
                 <a class="btn" href="/problems">All problems <Icon Name="arrow" /></a>
             </div>
             <div class="grid">
-                @for (int i = 0; i < ProblemCatalog.All.Count && i < 4; i++)
+                @for (int i = 0; i < PlaygroundCatalog.All.Count && i < 4; i++)
                 {
-                    <ProblemCard Problem="ProblemCatalog.All[i]" Index="i" />
+                    <ProblemCard Problem="PlaygroundCatalog.All[i]" Index="i" />
                 }
             </div>
         </div>

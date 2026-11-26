@@ -1,51 +1,31 @@
-@if (Problem.Available)
-{
-    <a class="card cat-searching" href="/problems/@Problem.Slug" style="--i:@Index">@Content</a>
-}
-else
-{
-    <div class="card soon cat-searching" style="--i:@Index" aria-disabled="true">@Content</div>
-}
+<a class="card cat-searching" href="/problems/@Problem.Slug" style="--i:@Index">
+    <div class="card-body">
+        <span class="card-cat">LeetCode #@Problem.Number · @Problem.Difficulty</span>
+        <h3 class="card-title">@Problem.Title</h3>
+        <div class="ps-tags">
+            <span class="tag-chip">@Problem.Category</span>
+        </div>
+        <p class="card-text">@Summary</p>
+        <code class="ps-sig">@Problem.Entry.Description</code>
+        <div class="card-foot">
+            <span>@Problem.DefaultCases.Count test cases</span>
+            <span class="card-go">Solve it <Icon Name="arrow" /></span>
+        </div>
+    </div>
+</a>
 
 @code {
-    [Parameter, EditorRequired] public ProblemDef Problem { get; set; } = default!;
+    [Parameter, EditorRequired] public PlaygroundProblem Problem { get; set; } = default!;
     [Parameter] public int Index { get; set; }
 
-    private RenderFragment Content => @<text>
-        <div class="card-body">
-            <span class="card-cat">LeetCode #@Problem.Number</span>
-            <h3 class="card-title">@Problem.Title</h3>
-            <div class="ps-tags">
-                @foreach (var t in Problem.Techniques)
-                {
-                    <span class="tag-chip">@t</span>
-                }
-            </div>
-            @if (Problem.Available)
-            {
-                <div class="ps-vs">
-                    @for (int k = 0; k < Problem.Approaches.Count; k++)
-                    {
-                        var a = Problem.Approaches[k];
-                        @if (k > 0)
-                        {
-                            <span class="vs">vs</span>
-                        }
-                        <span><span class="ap-dot ap-@a.Key"></span>@a.Name <code>@a.Complexity.Worst</code></span>
-                    }
-                </div>
-            }
-            <div class="card-foot">
-                <span>@(Problem.Available ? $"{Problem.Approaches.Count} approaches" : "")</span>
-                @if (Problem.Available)
-                {
-                    <span class="card-go">Solve it <Icon Name="arrow" /></span>
-                }
-                else
-                {
-                    <span class="badge">coming soon</span>
-                }
-            </div>
-        </div>
-    </text>;
+    private string Summary
+    {
+        get
+        {
+            string d = Problem.Description;
+            int dot = d.IndexOf(". ", StringComparison.Ordinal);
+            string first = dot > 0 ? d[..(dot + 1)] : d;
+            return first.Length > 150 ? first[..147] + "…" : first;
+        }
+    }
 }

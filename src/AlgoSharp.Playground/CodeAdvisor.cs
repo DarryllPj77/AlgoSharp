@@ -41,6 +41,9 @@ public static class CodeAdvisor
         }
 
         string text = body?.ToString() ?? "";
+        // Fields and helper methods count too (e.g. a heap kept by a design class).
+        string classText = method.Ancestors().OfType<ClassDeclarationSyntax>().FirstOrDefault()?.ToString() ?? text;
+        bool usesHeap = classText.Contains("PriorityQueue");
         bool usesHash = body?.DescendantNodes().OfType<ObjectCreationExpressionSyntax>().Any(o => o.Type.ToString().StartsWith("Dictionary") || o.Type.ToString().StartsWith("HashSet")) == true
                         || body?.DescendantNodes().OfType<ImplicitObjectCreationExpressionSyntax>().Any(o => o.Parent?.Parent?.Parent is VariableDeclarationSyntax v && (v.Type.ToString().StartsWith("Dictionary") || v.Type.ToString().StartsWith("HashSet"))) == true;
         bool usesSort = text.Contains("Array.Sort") || text.Contains(".Sort(") || text.Contains("OrderBy");
@@ -48,7 +51,12 @@ public static class CodeAdvisor
         bool allocatesList = body?.DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>().Any() == true;
 
         string approach, explanation;
-        if (recursive)
+        if (usesHeap)
+        {
+            approach = "Heap (priority queue)";
+            explanation = "You keep values in a PriorityQueue, which always gives you the smallest priority first. Enqueue and Dequeue cost O(log n) each.";
+        }
+        else if (recursive)
         {
             approach = "Recursion";
             explanation = "The method calls itself. Its cost depends on how many calls are made, which the trace below lets you count.";
@@ -80,7 +88,11 @@ public static class CodeAdvisor
         }
 
         string time, space, confidence;
-        if (recursive)
+        if (usesHeap)
+        {
+            (time, confidence) = ("O(log n) per heap operation", "estimate: each Enqueue/Dequeue is logarithmic in the heap's size");
+        }
+        else if (recursive)
         {
             (time, confidence) = ("depends on the number of calls", "low: recursion isn't estimated from structure");
         }
@@ -95,7 +107,11 @@ public static class CodeAdvisor
             if (usesHash) time += " average (hash lookups are O(1) on average)";
             confidence = "estimate from loop nesting";
         }
-        space = usesHash || allocatesList && depth >= 1 && text.Contains(".Add(") ? "O(n) extra: a collection can grow with the input" : "O(1) extra (no collection grows with the input)";
+        bool classCollection = classText.Contains("new Dictionary") || classText.Contains("new HashSet") || classText.Contains("new List") || classText.Contains("new Stack") || classText.Contains("new Queue") || usesHeap
+                               || classText.Contains("new()") && (classText.Contains("Dictionary<") || classText.Contains("PriorityQueue<") || classText.Contains("List<"));
+        space = usesHash || usesHeap || classCollection && (depth >= 1 || method.Parent is ClassDeclarationSyntax { } c && c.Identifier.Text != "Solution") || allocatesList && depth >= 1 && text.Contains(".Add(")
+            ? "O(n) extra: a collection can grow with the input"
+            : recursive ? "O(depth) for the call stack" : "O(1) extra (no collection grows with the input)";
 
         var observations = new List<string>();
         foreach (var (n, conditions, passed) in runs.Where(r => r.N > 0))
@@ -123,8 +139,8 @@ public static class CodeAdvisor
         }
         else if (approach == "Hash map lookup" && allPassed)
         {
-            suggestions.Add("This matches the usual linear-time approach for this problem, trading O(n) memory for speed.");
-            suggestions.Add("Try an input with duplicate values (like [3, 3], target 6) to confirm you never pair an element with itself.");
+            suggestions.Add("Hash lookups replace a nested scan here, trading O(n) memory for speed.");
+            suggestions.Add("Add a test with duplicate values to make sure the edge cases behave as you expect.");
         }
         else if (allPassed)
         {

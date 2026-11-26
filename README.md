@@ -30,25 +30,44 @@ dotnet test
 
 Each visualizer has play, pause, step forward and back, a timeline you can scrub, seven speeds, custom and random input, variables, complexity, and a beginner-friendly explanation for every step. Keyboard: `Space` play, `←`/`→` step, `Home`/`End`, `R` run again, `/` search.
 
-## Problem solving
+## Problem solving: Solve it
 
-`/problems` shows one problem solved two ways, on the same input:
+`/problems` lists 28 LeetCode Easy problems (the NeetCode 150 Easy set):
+- **Arrays & Hashing:** Contains Duplicate, Valid Anagram, Two Sum
+- **Two Pointers:** Valid Palindrome
+- **Sliding Window:** Best Time to Buy and Sell Stock
+- **Stack:** Valid Parentheses
+- **Binary Search:** Binary Search
+- **Linked List:** Reverse Linked List, Merge Two Sorted Lists, Linked List Cycle
+- **Trees:** Invert Binary Tree, Maximum Depth, Diameter, Balanced Binary Tree, Same Tree, Subtree of Another Tree
+- **Heap / Priority Queue:** Kth Largest Element in a Stream, Last Stone Weight
+- **1-D Dynamic Programming:** Climbing Stairs, Min Cost Climbing Stairs
+- **Intervals:** Meeting Rooms
+- **Math & Geometry:** Happy Number, Plus One
+- **Bit Manipulation:** Single Number, Number of 1 Bits, Counting Bits, Reverse Bits, Missing Number
 
-- **Two Sum:** brute force (nested loops, O(n²)) vs a hash map (`Dictionary<int, int>`, O(n)). You can watch either approach on its own or both side by side on a shared timeline. Each one has its own C# line highlighting, a live dictionary view, and live counters for comparisons, lookups and insertions.
-- **Performance comparison:** puts Big-O (theory) next to the operations actually counted on your input. It also reruns the same code on worst-case inputs with n = 10, 100 and 1,000, with step recording off and only the counters on.
+**Solve it** (`/problems/{slug}`) opens the coding environment for the problem. There is no predefined solution to pick. Write your own C#, run it against the tests, and step through what it actually did.
 
-To add a problem, write each approach in `Algorithms/` (wrapped in a `// <code id>` region, using `T.Tick(...)` for counters) and register a `ProblemDef` in `Problems/ProblemCatalog.cs`. The page, comparison mode and scaling chart work without changes.
+Each problem is pure data in `AlgoSharp.Playground/PlaygroundCatalog.cs`:
+- description, constraints and examples
+- the C# signature, starter code and hints
+- typed parameters
+- a trusted reference solution (`References.cs`) that gives the expected output for any input, including your own custom cases
 
-## Code Lab: write your own C# and watch it run
+`ListNode` and `TreeNode` are predefined as on LeetCode, but you can also declare your own. Lists and trees are entered as arrays, e.g. `[1, 2, 3]` and `[3, 9, 20, null, null, 15, 7]`. Kth Largest is a "design" problem: the class is constructed once, then `Add` is called for each value.
 
-`/code/two-sum` has a Monaco editor where you write your own solution, with any variable names or style. Press **Visualize** to step through what your code actually did.
+To add a problem, add a `PlaygroundProblem` entry and a reference answer. The page, sandbox and visualizer need no changes. `tests/.../Solutions.cs` holds a correct solution for every problem, and the tests run each one through the full pipeline.
+
+## How Solve It runs your code
+
+The Solve It page has a Monaco editor. Write any solution, in your own style and with your own names, then press **Run & visualize**.
 
 1. **Compile (server, no execution).** Roslyn compiles the code and reports errors live. A check rejects APIs a solution doesn't need (file I/O, network, reflection, threads, `Environment`, …) and constructs the visualizer can't trace (`goto`, `async`, `yield`, `unsafe`, …).
 2. **Instrument.** `AlgoSharp.Playground/Compilation/Instrumenter.cs` rewrites your syntax tree to report each statement, condition (with its true/false result), variable write, array/`List` read (with the index variable's name), dictionary/set lookup (hit or miss), method entry and return, and the exception site. Your names, logic and line numbers are unchanged.
 3. **Execute (sandbox only).** The instrumented assembly runs in a fresh Docker container. The container has no network, a read-only root filesystem, runs as user `nobody`, has no capabilities and no privilege escalation, and is limited to 256 MB of memory, 1 CPU and 64 processes. There's also a 15 s timeout and an event budget that stops infinite loops, even ones hidden inside `try/catch`. **User code never runs in the web server process.** Without Docker, execution is disabled and the page says so.
-4. **Replay.** The trace becomes frames for the existing visual components. Arrays are shown as cells, with pointers named after the index variables your code actually used. Dictionaries and sets are shown as key/value chips, with lookups marked as hits or misses. Conditions appear as callouts, and the current line is highlighted in the editor.
+4. **Replay.** The trace becomes frames for the existing visual components. Arrays and indexed strings are shown as cells, with pointers named after the index variables your code actually used. Linked lists and trees are drawn as node diagrams, with your variables as pointers and rewired links highlighted. Stacks, queues and heaps are shown as cells too. Dictionaries and sets are shown as key/value chips, with lookups marked as hits or misses. Conditions appear as callouts, and the current line is highlighted in the editor.
 
-Results are checked by the problem's own rule (any valid Two Sum pair is accepted). A learning assistant labels the approach and gives complexity estimates, saying how confident it is. It suggests next steps but never claims a solution is optimal, and offers progressive hints.
+Each test case shows the expected output next to yours. Results are checked against the reference answer, or by a custom rule when several answers are valid (e.g. any valid Two Sum pair). A learning assistant labels the approach and gives complexity estimates, saying how confident it is. It suggests next steps but never claims a solution is optimal, and offers progressive hints.
 
 Enable execution (Docker Desktop with Linux containers must be running):
 

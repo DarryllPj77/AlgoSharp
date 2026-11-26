@@ -26,7 +26,14 @@ public sealed record TraceValue(
     IReadOnlyList<TraceEntry>? Entries = null,
     int Ref = 0,
     string? Type = null,
-    bool Truncated = false);
+    bool Truncated = false,
+    IReadOnlyList<TraceNode>? Nodes = null);
+
+/// <summary>
+/// A node of a linked structure reachable from a variable. For lists <see cref="Next"/> is the
+/// next node; for trees <see cref="Next"/>/<see cref="Right"/> are the left/right children (0 = null).
+/// </summary>
+public sealed record TraceNode(int Ref, string Value, int Next, int Right);
 
 public sealed record TraceEntry(string Key, string Value);
 
@@ -48,14 +55,19 @@ public sealed record TraceEvent(
 
 public sealed record TestCaseRequest(string Label, IReadOnlyList<JsonElement> Args);
 
-/// <summary>Sent to the sandboxed runner on stdin.</summary>
+/// <summary>
+/// Sent to the sandboxed runner on stdin. When <see cref="DesignMethod"/> is set the type is
+/// constructed with all arguments but the last, then the method is called once per element of
+/// the last argument (LeetCode "design" problems); the result is the array of return values.
+/// </summary>
 public sealed record RunRequest(
     string AssemblyBase64,
     string TypeName,
     string MethodName,
     IReadOnlyList<TestCaseRequest> Cases,
     int MaxEvents,
-    int MaxOutputChars);
+    int MaxOutputChars,
+    string? DesignMethod = null);
 
 public sealed record CaseResult(
     string Label,

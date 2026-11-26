@@ -5,20 +5,51 @@
 <div class="page">
     <div class="container">
         <section class="ps-hero">
-            <span class="eyebrow"><span class="dot"></span>Problem solving</span>
-            <h1>One problem, <em>two ways</em> to solve it.</h1>
+            <span class="eyebrow"><span class="dot"></span>Problem solving · Solve it</span>
+            <h1>Write your own C#, <em>watch it run</em>.</h1>
             <p class="hero-lede">
-                Watch a brute-force solution and an optimized one run side by side on the same input, in real C#,
-                and compare what each one actually costs: comparisons, lookups and memory.
+                Pick a problem, solve it your way, and run it against test cases in a sandbox. Then step through what
+                your code actually did, line by line: its variables, loops, conditions, arrays, lists and trees.
             </p>
         </section>
 
-        <div class="grid" style="padding-bottom:96px">
-            @for (int i = 0; i < ProblemCatalog.All.Count; i++)
+        <div class="section-head" style="margin-bottom:14px">
+            <div class="chips" role="tablist" aria-label="Topics" style="margin-bottom:0">
+                <button class="chip @(category is null ? "on" : "")" @onclick="() => category = null">All <span class="count">@PlaygroundCatalog.All.Count</span></button>
+                @foreach (var c in PlaygroundCatalog.Categories)
+                {
+                    int count = PlaygroundCatalog.All.Count(p => p.Category == c);
+                    <button class="chip @(category == c ? "on" : "")" @onclick="() => category = c">@c <span class="count">@count</span></button>
+                }
+            </div>
+            <div class="search">
+                <Icon Name="search" />
+                <input type="search" placeholder="Search problems…" aria-label="Search problems" value="@query" @oninput="e => query = e.Value?.ToString() ?? string.Empty" />
+            </div>
+        </div>
+
+        @if (Filtered.Count == 0)
+        {
+            <p class="empty">No problem matches “@query”.</p>
+        }
+        <div class="grid" style="padding-bottom:96px" @key="@(category + "|" + query)">
+            @for (int i = 0; i < Filtered.Count; i++)
             {
-                var p = ProblemCatalog.All[i];
-                <ProblemCard Problem="p" Index="i" />
+                <ProblemCard Problem="Filtered[i]" Index="i" @key="Filtered[i].Slug" />
             }
         </div>
     </div>
 </div>
+
+@code {
+    private string? category;
+    private string query = "";
+
+    private List<PlaygroundProblem> Filtered => PlaygroundCatalog.All
+        .Where(p => category is null || p.Category == category)
+        .Where(p => query.Trim().Length == 0
+                    || p.Title.Contains(query.Trim(), StringComparison.OrdinalIgnoreCase)
+                    || p.Category.Contains(query.Trim(), StringComparison.OrdinalIgnoreCase)
+                    || p.Number.ToString() == query.Trim())
+        .ToList();
+}

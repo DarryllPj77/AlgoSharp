@@ -19,8 +19,11 @@ public sealed record CompileResult(
     public IEnumerable<Diagnostic> Errors => Diagnostics.Where(d => d.Severity == "error");
 }
 
-/// <summary>The method the problem calls, e.g. int[] TwoSum(int[], int).</summary>
-public sealed record EntrySignature(string PreferredName, ITypeSymbolMatcher[] Parameters, string Description);
+/// <summary>
+/// The method the problem calls, e.g. int[] TwoSum(int[], int). For design problems
+/// (<see cref="DesignClass"/> set) the class is constructed and <see cref="PreferredName"/> is called repeatedly.
+/// </summary>
+public sealed record EntrySignature(string PreferredName, ITypeSymbolMatcher[] Parameters, string Description, string? DesignClass = null);
 
 public delegate bool ITypeSymbolMatcher(ITypeSymbol type);
 
@@ -36,6 +39,28 @@ public static class CodeCompiler
         global using System.Linq;
         global using System.Text;
         """;
+
+    /// <summary>LeetCode's predefined node types, added unless the user declares their own.</summary>
+    private static readonly (string Name, string Source)[] Definitions =
+    [
+        ("ListNode", """
+            public class ListNode
+            {
+                public int val;
+                public ListNode next;
+                public ListNode(int val = 0, ListNode next = null) { this.val = val; this.next = next; }
+            }
+            """),
+        ("TreeNode", """
+            public class TreeNode
+            {
+                public int val;
+                public TreeNode left;
+                public TreeNode right;
+                public TreeNode(int val = 0, TreeNode left = null, TreeNode right = null) { this.val = val; this.left = left; this.right = right; }
+            }
+            """),
+    ];
 
     private static readonly Lazy<ImmutableArray<MetadataReference>> References = new(LoadReferences);
 
@@ -54,7 +79,13 @@ public static class CodeCompiler
 
         var tree = CSharpSyntaxTree.ParseText(source, ParseOptions, path: "Solution.cs");
         var usings = CSharpSyntaxTree.ParseText(GlobalUsings, ParseOptions, path: "GlobalUsings.cs");
-        var compilation = CSharpCompilation.Create("UserSolution", [tree, usings], References.Value, Options);
+        var declared = tree.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>().Select(t => t.Identifier.Text).ToHashSet();
+        var support = new List<SyntaxTree> { usings };
+        foreach (var (name, src) in Definitions)
+        {
+            if (!declared.Contains(name)) support.Add(CSharpSyntaxTree.ParseText(src, ParseOptions, path: name + ".cs"));
+        }
+        var compilation = CSharpCompilation.Create("UserSolution", [tree, .. support], References.Value, Options);
         var model = compilation.GetSemanticModel(tree);
 
         var diagnostics = compilation.GetDiagnostics()
@@ -84,7 +115,7 @@ public static class CodeCompiler
             return new(false, Sorted(diagnostics), null, null, null, tree);
         }
         var instrumented = CSharpSyntaxTree.Create((CSharpSyntaxNode)instrumentedRoot, ParseOptions, "Solution.instrumented.cs");
-        var traced = CSharpCompilation.Create("UserSolution", [instrumented, usings], References.Value, Options);
+        var traced = CSharpCompilation.Create("UserSolution", [instrumented, .. support], References.Value, Options);
 
         using var stream = new MemoryStream();
         var emit = traced.Emit(stream);
@@ -112,6 +143,18 @@ public static class CodeCompiler
     /// <summary>Finds the method to call: preferred name first, otherwise any method with the right parameter types.</summary>
     private static (string? Type, string? Method, string? Error) FindEntry(SyntaxTree tree, SemanticModel model, EntrySignature entry)
     {
+        if (entry.DesignClass is { } designClass)
+        {
+            var cls = tree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>()
+                .Select(c => model.GetDeclaredSymbol(c)).OfType<INamedTypeSymbol>()
+                .FirstOrDefault(c => c.Name == designClass);
+            if (cls is null) return (null, null, $"Keep the class named {designClass}: {entry.Description}.");
+            var m = cls.GetMembers(entry.PreferredName).OfType<IMethodSymbol>()
+                .FirstOrDefault(x => x.DeclaredAccessibility == Accessibility.Public && !x.IsStatic && x.Parameters.Length == entry.Parameters.Length
+                                     && x.Parameters.Select((p, i) => entry.Parameters[i](p.Type)).All(ok => ok));
+            if (m is null) return (null, null, $"{designClass} needs a public method {entry.Description}.");
+            return (cls.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""), m.Name, null);
+        }
         var methods = tree.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>()
             .Select(m => model.GetDeclaredSymbol(m))
             .OfType<IMethodSymbol>()

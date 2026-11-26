@@ -39,7 +39,8 @@ internal sealed class Instrumenter(SemanticModel model) : CSharpSyntaxRewriter
         var visited = (MethodDeclarationSyntax)base.VisitMethodDeclaration(node)!;
         if (node.Body is not null && visited.Body is not null)
         {
-            return visited.WithBody(WrapBody(node.Identifier.Text, node, node.ParameterList, visited.Body));
+            bool isStatic = node.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword));
+            return visited.WithBody(WrapBody(node.Identifier.Text, node, node.ParameterList, visited.Body, includeThis: !isStatic));
         }
         if (node.ExpressionBody is not null && visited.ExpressionBody is not null && !IsVoid(node.ReturnType))
         {
@@ -47,6 +48,14 @@ internal sealed class Instrumenter(SemanticModel model) : CSharpSyntaxRewriter
             return visited.WithExpressionBody(visited.ExpressionBody.WithExpression(expr));
         }
         return visited;
+    }
+
+    public override SyntaxNode? VisitConstructorDeclaration(ConstructorDeclarationSyntax node)
+    {
+        var visited = (ConstructorDeclarationSyntax)base.VisitConstructorDeclaration(node)!;
+        if (node.Body is null || visited.Body is null) return visited;
+        bool isStatic = node.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword));
+        return visited.WithBody(WrapBody(node.Identifier.Text, node, node.ParameterList, visited.Body, includeThis: !isStatic));
     }
 
     public override SyntaxNode? VisitLocalFunctionStatement(LocalFunctionStatementSyntax node)
@@ -62,9 +71,15 @@ internal sealed class Instrumenter(SemanticModel model) : CSharpSyntaxRewriter
     private static bool IsVoid(TypeSyntax type) => type is PredefinedTypeSyntax p && p.Keyword.IsKind(SyntaxKind.VoidKeyword);
 
     /// <summary>{ Tr.Enter(name, line, params...); try { body } finally { Tr.Exit(); } }</summary>
-    private BlockSyntax WrapBody(string name, SyntaxNode decl, ParameterListSyntax parameters, BlockSyntax body)
+    private BlockSyntax WrapBody(string name, SyntaxNode decl, ParameterListSyntax parameters, BlockSyntax body, bool includeThis = false)
     {
         var args = new List<ExpressionSyntax> { Str(name), Num(Line(decl)) };
+        // Instance members: the tracer shows the object's fields (e.g. a heap kept by a design class).
+        if (includeThis && decl.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault() is ClassDeclarationSyntax cls
+            && cls.Members.OfType<FieldDeclarationSyntax>().Any(f => !f.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword) || m.IsKind(SyntaxKind.ConstKeyword))))
+        {
+            args.Add(TupleExpression(SeparatedList([Argument(Str("this")), Argument(CastExpression(ParseTypeName("object"), ThisExpression()))])));
+        }
         foreach (var p in parameters.Parameters)
         {
             if (p.Modifiers.Any(m => m.IsKind(SyntaxKind.OutKeyword))) continue;
@@ -270,6 +285,12 @@ internal sealed class Instrumenter(SemanticModel model) : CSharpSyntaxRewriter
     {
         if (node.Expression is null) return node;
         var expression = (ExpressionSyntax)Visit(node.Expression)!;
+        // Keep the declared return type (return null; / return 0; in a uint method), so Ret<T> infers correctly.
+        var converted = model.GetTypeInfo(node.Expression).ConvertedType;
+        if (converted is not null && converted.TypeKind != TypeKind.Error && !converted.IsAnonymousType && converted.SpecialType != SpecialType.System_Void)
+        {
+            expression = CastExpression(ParseTypeName(converted.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)), ParenthesizedExpression(expression));
+        }
         return node.WithExpression(Call("Ret", expression, Num(Line(node))));
     }
 
@@ -306,7 +327,7 @@ internal sealed class Instrumenter(SemanticModel model) : CSharpSyntaxRewriter
         var target = visited.Expression;
         var arg = visited.ArgumentList.Arguments[0].Expression;
 
-        if (type is IArrayTypeSymbol { Rank: 1 } || IsGeneric(type, "List"))
+        if (type is IArrayTypeSymbol { Rank: 1 } || IsGeneric(type, "List") || type?.SpecialType == SpecialType.System_String)
         {
             return Call("Read", target, arg, Str(name), indexName);
         }
