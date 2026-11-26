@@ -1,0 +1,452 @@
+@page "/code/{Slug}"
+@using AlgoSharp.Playground.Compilation
+@using AlgoSharp.Playground.Execution
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject PlaygroundService Service
+
+@if (problem is null)
+{
+    <PageTitle>Code Lab · AlgoSharp</PageTitle>
+    <div class="page container empty"><p>No Code Lab exercise called “@Slug”. <a href="/problems" style="color:var(--brand)">Back to problems</a>.</p></div>
+}
+else
+{
+    <PageTitle>@problem.Problem.Title · Code Lab · AlgoSharp</PageTitle>
+    <div class="page cat-searching">
+        <div class="viz-header">
+            <div class="viz-header-inner">
+                <div>
+                    <div class="crumbs"><a href="/problems">Problem Solving</a><span>/</span><a href="/problems/@problem.Slug">@problem.Problem.Title</a><span>/</span><span>Code Lab</span></div>
+                    <div class="viz-title">
+                        <h1>Write &amp; visualize your C#</h1>
+                        <span class="pill">@problem.Problem.Title</span>
+                    </div>
+                </div>
+                <div class="viz-header-right">
+                    <span class="sandbox-status @(status?.Available == true ? "ok" : "off")" title="@status?.Message">
+                        <i></i>@(status is null ? "Checking sandbox…" : status.Available ? "Sandbox ready" : "Execution disabled")
+                    </span>
+                    <button class="btn btn-sm btn-ghost" @onclick="ResetCode"><Icon Name="reset" /> Starter code</button>
+                    <button class="btn btn-accent" disabled="@(running || status?.Available != true)" @onclick="Visualize">
+                        <Icon Name="play" /> @(running ? "Running…" : "Visualize")
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="lab">
+            <!-- ============ editor ============ -->
+            <section class="lab-left">
+                <div class="box-card lab-editor-card">
+                    <header>
+                        <Icon Name="code" /> Solution.cs
+                        <span class="muted">@problem.Entry.Description</span>
+                    </header>
+                    <div class="lab-editor" @ref="editorHost"></div>
+                    @if (editorError is not null)
+                    {
+                        <p class="field-error" style="padding:10px 16px">@editorError</p>
+                    }
+                </div>
+
+                <div class="box-card">
+                    <header><Icon Name="info" /> Compiler <span class="muted">@(compile is null ? "" : compile.Errors.Any() ? $"{compile.Errors.Count()} error(s)" : "no errors")</span></header>
+                    <div class="body diag-list">
+                        @if (compile is null)
+                        {
+                            <p class="vars-empty">Compiling…</p>
+                        }
+                        else if (!compile.Diagnostics.Any())
+                        {
+                            <p class="diag ok">✓ Compiles. Press Visualize to run it in the sandbox.</p>
+                        }
+                        @foreach (var d in compile?.Diagnostics.Take(8) ?? [])
+                        {
+                            <button class="diag @d.Severity" @onclick="() => Reveal(d.Line)">
+                                <span class="where">Line @d.Line</span><span>@d.Message</span><code>@d.Code</code>
+                            </button>
+                        }
+                    </div>
+                </div>
+
+                @if (status is { Available: false })
+                {
+                    <div class="box-card sandbox-off">
+                        <header><Icon Name="info" /> Why can't I run code?</header>
+                        <div class="body">
+                            <p>@status.Message</p>
+                            <p class="field-hint" style="margin-top:8px">
+                                AlgoSharp never runs your code inside the web server. Code runs only in a locked-down Docker container
+                                (no network, read-only files, memory/CPU/time limits). Until that sandbox is available, you can still edit,
+                                compile and get feedback here, but nothing is executed.
+                            </p>
+                            <button class="btn btn-sm" style="margin-top:10px" @onclick="RefreshStatus"><Icon Name="reset" /> Check again</button>
+                        </div>
+                    </div>
+                }
+            </section>
+
+            <!-- ============ visualization ============ -->
+            <section class="lab-right">
+                @if (run?.ExecutionError is { } execError)
+                {
+                    <div class="message error"><span class="step-no">sandbox</span><p>@execError</p></div>
+                }
+                @if (Selected is { } outcome)
+                {
+                    <div class="case-tabs">
+                        @for (int k = 0; k < run!.Cases.Count; k++)
+                        {
+                            int idx = k;
+                            var c = run.Cases[k];
+                            <button class="case-tab @(idx == selected ? "on" : "") @(c.Verdict?.Passed == true ? "pass" : "fail")" @onclick="() => SelectCase(idx)">
+                                <span class="dot"></span>@c.Case.Label
+                            </button>
+                        }
+                    </div>
+
+                    <div class="stage" style="--dur:@(player.AnimationMs)ms">
+                        <div class="ps-callout tone-@(Frame?.Step.Callout?.Tone.ToString().ToLowerInvariant() ?? "none")">
+                            @if (Frame?.Step.Callout is { } callout)
+                            {
+                                <span @key="@(player.Index + callout.Text)">@callout.Text</span>
+                            }
+                        </div>
+                        @if (Frame is { } f)
+                        {
+                            @if (f.Containers.Count == 0)
+                            {
+                                <p class="lab-empty">No arrays or collections in scope at this step.</p>
+                            }
+                            @foreach (var c in f.Containers)
+                            {
+                                <div class="lab-container" @key="c.Title">
+                                    <div class="lab-container-title">@c.Title</div>
+                                    @if (c.Array is { } arr)
+                                    {
+                                        <ArrayCanvas Frame="arr" />
+                                    }
+                                    else if (c.Map is { } map)
+                                    {
+                                        <MapCanvas Frame="map" />
+                                    }
+                                </div>
+                            }
+                        }
+                    </div>
+
+                    <div class="message @(Frame?.Kind == AlgoSharp.Tracing.TraceEventKind.Exception ? "error" : player.AtEnd && player.Steps.Count > 1 ? "done" : "")" aria-live="polite">
+                        <span class="step-no">line @(Frame?.Line ?? 0)</span>
+                        <p @key="player.Index">@Frame?.Step.Message</p>
+                    </div>
+                    <PlaybackControls Player="player" />
+                    <CounterStrip Counters="@(Frame?.Step.Counters ?? [])" Previous="@player.Previous?.Counters" Steps="player.Steps.Count" />
+
+                    <div class="lab-split">
+                        <div class="box-card">
+                            <header><Icon Name="vars" /> Variables <span class="muted">your names</span></header>
+                            <div class="body"><VariableInspector Vars="@(Frame?.Step.Vars ?? [])" Previous="@player.Previous?.Vars" /></div>
+                        </div>
+                        <div class="box-card">
+                            <header><Icon Name="bolt" /> Result</header>
+                            <div class="body result-body">
+                                <p class="verdict @(outcome.Verdict?.Passed == true ? "pass" : "fail")">
+                                    @(outcome.Verdict?.Passed == true ? "✓ Passed" : "✗ Failed") — @outcome.Verdict?.Explanation
+                                </p>
+                                @if (outcome.Result is { } r)
+                                {
+                                    <dl>
+                                        <dt>Input</dt><dd><code>nums = [@string.Join(", ", outcome.Case.Input.Numbers)], target = @outcome.Case.Input.Target</code></dd>
+                                        @if (r.Completed)
+                                        {
+                                            <dt>Returned</dt><dd><code>@r.ResultJson</code></dd>
+                                        }
+                                        else
+                                        {
+                                            <dt>Exception</dt>
+                                            <dd>
+                                                <code class="err">@r.ErrorType: @r.ErrorMessage</code>
+                                                @if (r.ErrorLine is > 0)
+                                                {
+                                                    <button class="btn btn-sm btn-ghost" @onclick="() => Reveal(r.ErrorLine!.Value)">line @r.ErrorLine</button>
+                                                }
+                                            </dd>
+                                        }
+                                        @if (!string.IsNullOrEmpty(r.Output))
+                                        {
+                                            <dt>Console</dt><dd><pre class="console">@r.Output</pre></dd>
+                                        }
+                                    </dl>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (run is null || run.Cases.Count == 0)
+                {
+                    <div class="lab-placeholder">
+                        <Icon Name="play" />
+                        <h2>Run your code to see it execute</h2>
+                        <p>Press <b>Visualize</b>. Your C# runs in the sandbox against the test cases below, and every line it executes, every condition it checks and every array element it reads is recorded, so you can step through it here, forwards and backwards.</p>
+                    </div>
+                }
+            </section>
+        </div>
+
+        <div class="lab-bottom">
+            <div class="box-card">
+                <header><Icon Name="vars" /> Test cases <span class="muted">@cases.Count / @MaxCases</span></header>
+                <div class="body">
+                    <div class="case-list">
+                        @for (int k = 0; k < cases.Count; k++)
+                        {
+                            int idx = k;
+                            var c = cases[k];
+                            <div class="case-row">
+                                <code>nums = [@string.Join(", ", c.Input.Numbers)], target = @c.Input.Target</code>
+                                <button class="icon-btn" title="Remove" aria-label="Remove test case" disabled="@(cases.Count <= 1)" @onclick="() => RemoveCase(idx)">✕</button>
+                            </div>
+                        }
+                    </div>
+                    <div class="field-row" style="margin-top:6px">
+                        <div class="field"><label for="new-nums">nums</label><input id="new-nums" value="@newNums" @onchange="e => newNums = e.Value?.ToString() ?? string.Empty" /></div>
+                        <div class="field"><label for="new-target">target</label><input id="new-target" value="@newTarget" @onchange="e => newTarget = e.Value?.ToString() ?? string.Empty" /></div>
+                    </div>
+                    @if (caseError is not null)
+                    {
+                        <p class="field-error" style="margin-top:8px">@caseError</p>
+                    }
+                    <div class="actions-row">
+                        <button class="btn btn-sm" disabled="@(cases.Count >= MaxCases)" @onclick="AddCase">Add case</button>
+                        <button class="btn btn-sm" disabled="@(cases.Count >= MaxCases)" @onclick="AddRandomCase"><Icon Name="shuffle" /> Random case</button>
+                        <button class="btn btn-sm btn-ghost" @onclick="ResetCases"><Icon Name="reset" /> Examples</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="box-card">
+                <header><Icon Name="info" /> Learning assistant</header>
+                <div class="body assistant">
+                    @if (advice is { } a)
+                    {
+                        <div class="assist-head">
+                            <span class="tag-chip">@a.Approach</span>
+                            <span class="assist-cx">Time <code>@a.Time</code> · Space <code>@a.Space</code></span>
+                        </div>
+                        <p>@a.Explanation</p>
+                        <p class="field-hint">Complexity: @a.Confidence.</p>
+                        @if (a.Observations.Count > 0)
+                        {
+                            <ul class="ideas">@foreach (var o in a.Observations) { <li>@o</li> }</ul>
+                        }
+                        @foreach (var s in a.Suggestions)
+                        {
+                            <p class="assist-suggest">@s</p>
+                        }
+                    }
+                    else
+                    {
+                        <p class="vars-empty">Compile your code to get an explanation of its approach.</p>
+                    }
+                    <div class="hints">
+                        @for (int k = 0; k < hintsShown && k < problem.Hints.Count; k++)
+                        {
+                            <p class="hint"><b>Hint @(k + 1).</b> @problem.Hints[k]</p>
+                        }
+                        @if (hintsShown < problem.Hints.Count)
+                        {
+                            <button class="btn btn-sm btn-ghost" @onclick="() => hintsShown++">Show hint @(hintsShown + 1) of @problem.Hints.Count</button>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private const int MaxCases = 6;
+
+    [Parameter] public string Slug { get; set; } = "";
+
+    private readonly Player player = new();
+    private readonly Random rng = new();
+    private PlaygroundProblem? problem;
+    private List<PlaygroundCase> cases = [];
+    private CompileResult? compile;
+    private PlaygroundRun? run;
+    private Advice? advice;
+    private SandboxStatus? status;
+    private int selected;
+    private bool running;
+    private int hintsShown;
+    private string newNums = "1, 5, 9, 2";
+    private string newTarget = "11";
+    private string? caseError;
+    private string? editorError;
+    private string code = "";
+
+    private ElementReference editorHost;
+    private IJSObjectReference? module;
+    private IJSObjectReference? editor;
+    private DotNetObjectReference<CodeLab>? selfRef;
+    private (int Case, int Index, int Line) highlighted = (-1, -1, -1);
+
+    private CaseOutcome? Selected => run is { Cases.Count: > 0 } r ? r.Cases[Math.Min(selected, r.Cases.Count - 1)] : null;
+
+    private TraceFrame? Frame => Selected is { Frames.Count: > 0 } o ? o.Frames[Math.Min(player.Index, o.Frames.Count - 1)] : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        problem = PlaygroundCatalog.Find(Slug);
+        if (problem is null) return;
+        player.Changed += () => _ = InvokeAsync(StateHasChanged);
+        cases = [.. problem.DefaultCases];
+        code = problem.StarterCode;
+        compile = PlaygroundService.Check(problem, code);
+        advice = compile.Success ? Analyze(compile, []) : null;
+        status = await Service.StatusAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (problem is null) return;
+        if (firstRender)
+        {
+            try
+            {
+                selfRef = DotNetObjectReference.Create(this);
+                module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/editor.js");
+                editor = await module.InvokeAsync<IJSObjectReference>("create", editorHost, code, selfRef);
+                await PushMarkers();
+            }
+            catch (JSException ex)
+            {
+                editorError = ex.Message;
+                StateHasChanged();
+            }
+            catch (JSDisconnectedException) { }
+            return;
+        }
+        if (editor is null) return;
+        var now = (selected, player.Index, Frame?.Line ?? 0);
+        if (now == highlighted) return;
+        highlighted = now;
+        string kind = Frame?.Kind == AlgoSharp.Tracing.TraceEventKind.Exception ? "error"
+            : Frame?.Step.Callout?.Tone == CellState.Compare ? "cond-false" : "exec";
+        try { await editor.InvokeVoidAsync("highlight", Frame?.Line ?? 0, kind); } catch (JSDisconnectedException) { }
+    }
+
+    [JSInvokable]
+    public async Task OnCodeChanged()
+    {
+        if (editor is null || problem is null) return;
+        code = await editor.InvokeAsync<string>("getValue");
+        compile = PlaygroundService.Check(problem, code);
+        advice = compile.Success ? Analyze(compile, []) : advice;
+        await PushMarkers();
+        StateHasChanged();
+    }
+
+    private Advice? Analyze(CompileResult c, IReadOnlyList<(int, int, bool)> runs) =>
+        c.Tree is null || c.MethodName is null ? null : CodeAdvisor.Analyze(c.Tree, c.MethodName, runs, problem!.Hints.Count);
+
+    private async Task PushMarkers()
+    {
+        if (editor is null || compile is null) return;
+        try
+        {
+            object markers = compile.Diagnostics.Select(d => new { line = d.Line, column = d.Column, message = d.Message, severity = d.Severity }).ToArray();
+            await editor.InvokeVoidAsync("setMarkers", markers);
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task Visualize()
+    {
+        if (problem is null || running) return;
+        running = true;
+        player.Load([], false);
+        StateHasChanged();
+        try
+        {
+            if (editor is not null) code = await editor.InvokeAsync<string>("getValue");
+            run = await Service.RunAsync(problem, code, cases);
+            compile = run.Compile;
+            advice = run.Advice ?? advice;
+            await PushMarkers();
+            selected = Math.Max(0, run.Cases.ToList().FindIndex(c => c.Verdict?.Passed != true));
+            LoadCase(autoplay: true);
+        }
+        finally
+        {
+            running = false;
+        }
+    }
+
+    private void SelectCase(int index)
+    {
+        selected = index;
+        LoadCase(autoplay: false);
+    }
+
+    private void LoadCase(bool autoplay)
+    {
+        var steps = Selected?.Frames.Select(f => f.Step).ToList() ?? [];
+        player.Load(steps, autoplay);
+        highlighted = (-1, -1, -1);
+    }
+
+    private async Task Reveal(int line)
+    {
+        if (editor is null) return;
+        try { await editor.InvokeVoidAsync("reveal", line); } catch (JSDisconnectedException) { }
+    }
+
+    private async Task ResetCode()
+    {
+        if (problem is null) return;
+        code = problem.StarterCode;
+        if (editor is not null) await editor.InvokeVoidAsync("setValue", code);
+        compile = PlaygroundService.Check(problem, code);
+        await PushMarkers();
+    }
+
+    private async Task RefreshStatus() => status = await Service.StatusAsync();
+
+    private void AddCase()
+    {
+        try
+        {
+            cases.Add(new PlaygroundCase($"Custom {cases.Count + 1}", ProblemDef.Parse(newNums, newTarget)));
+            caseError = null;
+        }
+        catch (FormatException ex)
+        {
+            caseError = ex.Message;
+        }
+    }
+
+    private void AddRandomCase() => cases.Add(new PlaygroundCase($"Random {cases.Count + 1}", problem!.Problem.RandomInput(rng)));
+
+    private void RemoveCase(int index) => cases.RemoveAt(index);
+
+    private void ResetCases() => cases = [.. problem!.DefaultCases];
+
+    public async ValueTask DisposeAsync()
+    {
+        player.Dispose();
+        try
+        {
+            if (editor is not null)
+            {
+                await editor.InvokeVoidAsync("dispose");
+                await editor.DisposeAsync();
+            }
+            if (module is not null) await module.DisposeAsync();
+        }
+        catch (JSDisconnectedException) { }
+        selfRef?.Dispose();
+    }
+}

@@ -26,8 +26,11 @@
         {
             <div @key="e.Key" class="mapv-entry s-@e.State.ToString().ToLowerInvariant()">
                 <span class="k">@e.Key</span>
-                <span class="arrow">→</span>
-                <span class="v" @key="@(e.Key + ":" + e.Value)">@e.Value</span>
+                @if (e.Value.Length > 0)
+                {
+                    <span class="arrow">→</span>
+                    <span class="v" @key="@(e.Key + ":" + e.Value)">@e.Value</span>
+                }
             </div>
         }
     </div>

@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AlgoSharp.Core\AlgoSharp.Core.csproj" />
+    <ProjectReference Include="..\AlgoSharp.Playground\AlgoSharp.Playground.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

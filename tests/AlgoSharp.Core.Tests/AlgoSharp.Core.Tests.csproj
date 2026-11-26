@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AlgoSharp.Core\AlgoSharp.Core.csproj" />
+    <ProjectReference Include="..\..\src\AlgoSharp.Playground\AlgoSharp.Playground.csproj" />
+    <ProjectReference Include="..\..\src\AlgoSharp.Runner\AlgoSharp.Runner.csproj" />
   </ItemGroup>
 
 </Project>

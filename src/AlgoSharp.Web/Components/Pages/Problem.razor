@@ -28,6 +28,10 @@ else
                     </div>
                 </div>
                 <div class="viz-header-right">
+                    @if (PlaygroundCatalog.Find(problem.Slug) is not null)
+                    {
+                        <a class="btn btn-sm" href="/code/@problem.Slug"><Icon Name="code" /> Write your own</a>
+                    }
                     <div class="mode-tabs" role="tablist" aria-label="Approach">
                         @foreach (var a in problem.Approaches)
                         {

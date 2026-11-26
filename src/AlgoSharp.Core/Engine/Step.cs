@@ -29,7 +29,11 @@ public enum ArrayLayout
     Stack,
 }
 
-public sealed record CellView(int Id, int Value, int Pos, int Row, CellState State);
+public sealed record CellView(int Id, int Value, int Pos, int Row, CellState State)
+{
+    /// <summary>Text to display instead of <see cref="Value"/> (strings, chars, traced values).</summary>
+    public string? Label { get; init; }
+}
 
 public sealed record PointerView(string Name, int Pos, int Row, int Stack);
 

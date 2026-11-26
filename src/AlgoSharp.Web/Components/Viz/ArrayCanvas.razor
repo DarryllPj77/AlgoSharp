@@ -30,12 +30,12 @@
             <div @key="c.Id" class="cell s-@c.State.ToString().ToLowerInvariant()" style="--pos:@c.Pos;--row:@c.Row;--h:@Height(c)">
                 @if (Frame.Layout == ArrayLayout.Bars)
                 {
-                    <span class="val">@c.Value</span>
+                    <span class="val">@(c.Label ?? c.Value.ToString())</span>
                     <div class="bar"></div>
                 }
                 else
                 {
-                    <div class="box">@c.Value</div>
+                    <div class="box">@(c.Label ?? c.Value.ToString())</div>
                 }
             </div>
         }
