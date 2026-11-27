@@ -1,5 +1,6 @@
 @inherits LayoutComponentBase
 @inject IJSRuntime JS
+@inject SoundCues Sound
 @implements IAsyncDisposable
 
 <header class="topbar">
@@ -11,14 +12,13 @@
         <nav class="nav">
             <NavLink href="/" Match="NavLinkMatch.All">Library</NavLink>
             <NavLink href="/problems">Problem Solving</NavLink>
-            <NavLink href="/visualize/bubble-sort">Sorting</NavLink>
-            <NavLink href="/visualize/array">Arrays</NavLink>
-            <NavLink href="/visualize/linked-list">Linked Lists</NavLink>
-            <NavLink href="/visualize/stack">Stacks &amp; Queues</NavLink>
         </nav>
         <div class="topbar-right">
             @if (RendererInfo.IsInteractive)
             {
+                <button class="icon-btn" title="@(muted ? "Sound effects off" : "Sound effects on")" aria-label="Toggle sound effects" aria-pressed="@(muted ? "false" : "true")" @onclick="ToggleSound">
+                    <Icon Name="@(muted ? "mute" : "volume")" />
+                </button>
                 <button class="icon-btn" title="Toggle light / dark" aria-label="Toggle color theme" @onclick="ToggleTheme">
                     <Icon Name="@(theme == "dark" ? "sun" : "moon")" />
                 </button>
@@ -36,6 +36,7 @@
             <UserMenu />
         </div>
     </div>
+    <CategoryNav />
 </header>
 
 <main>
@@ -51,14 +52,18 @@
 @code {
     private IJSObjectReference? module;
     private string theme = "dark";
+    private bool muted;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
         module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/app.js");
         theme = await module.InvokeAsync<string>("getTheme");
+        muted = await Sound.IsMutedAsync();
         StateHasChanged();
     }
+
+    private async Task ToggleSound() => muted = await Sound.ToggleMutedAsync();
 
     private async Task ToggleTheme()
     {

@@ -42,6 +42,7 @@ builder.Services.AddSingleton(new Quotas(
 builder.Services.AddSingleton<PlaygroundService>();
 builder.Services.AddScoped<AlgoSharp.Web.Services.LocalLibrary>();
 builder.Services.AddScoped<AlgoSharp.Web.Services.BrowserRunner>();
+builder.Services.AddScoped<AlgoSharp.Web.Services.SoundCues>();
 
 // Accounts: ASP.NET Core Identity on PostgreSQL (Neon). Optional: without a connection string the
 // site runs as before and the account pages say accounts are off.

@@ -171,6 +171,39 @@ p { margin: 0; }
 .nav a.active { color: var(--text); }
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
+/* ---------- category menus (second header row) ---------- */
+.catbar { border-top: 1px solid var(--line); }
+.catbar-inner {
+    position: relative;
+    max-width: 1600px; margin: 0 auto; padding: 8px 24px;
+    display: flex; gap: 8px; flex-wrap: wrap;
+}
+.catmenu { position: relative; }
+.catmenu > summary { list-style: none; height: 32px; user-select: none; }
+.catmenu > summary::-webkit-details-marker { display: none; }
+.catmenu .chev { width: 14px; height: 14px; margin-left: -2px; fill: none; stroke: currentColor; stroke-width: 2; opacity: .6; transition: transform .18s; }
+.catmenu[open] > summary { color: var(--text); border-color: var(--cat); background: color-mix(in srgb, var(--cat) 10%, var(--surface)); }
+.catmenu[open] .chev { transform: rotate(180deg); }
+.catmenu-list {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
+    min-width: 260px; padding: 6px;
+    background: var(--surface); border: 1px solid var(--line-2); border-radius: 12px;
+    box-shadow: var(--shadow), 0 18px 40px -18px rgba(0, 0, 0, .55);
+    animation: catmenu-in .14s ease-out;
+}
+@keyframes catmenu-in { from { opacity: 0; transform: translateY(-4px); } }
+.catmenu-head { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 9px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+.catmenu-head b { font-size: 13px; font-weight: 600; color: var(--text); }
+.catmenu-head small { font-size: 12px; color: var(--text-3); }
+.catmenu-list a {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 8px 10px; border-radius: 8px; color: var(--text-2); font-size: 13.5px;
+    transition: background .12s, color .12s;
+}
+.catmenu-list a:hover, .catmenu-list a:focus-visible { background: var(--surface-2); color: var(--text); }
+.catmenu-list a.current { color: var(--text); background: color-mix(in srgb, var(--cat) 12%, var(--surface)); box-shadow: inset 2px 0 0 var(--cat); }
+.catmenu-list .difficulty i { height: 10px; width: 5px; }
+
 .icon-btn {
     width: 36px; height: 36px; border-radius: 9px;
     display: inline-grid; place-items: center;
@@ -869,6 +902,10 @@ a.card:hover .pv *, a.card:focus-visible .pv * { animation-play-state: running !
     .timeline { order: 3; flex-basis: 100%; }
     .shortcuts { display: none; }
     .viz-header-inner, .topbar-inner { padding-left: 14px; padding-right: 14px; }
+    .catbar-inner { padding: 6px 14px; gap: 6px; }
+    .catmenu > summary.chip { height: 30px; padding: 0 10px; font-size: 12.5px; }
+    .catmenu { position: static; }
+    .catmenu-list { left: 14px; right: 14px; min-width: 0; }
     .container { padding: 0 16px; }
     .arr-track { --lane-h: 180px; }
     .cx { grid-template-columns: repeat(2, 1fr); }

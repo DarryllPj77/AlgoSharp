@@ -1,0 +1,63 @@
+@implements IDisposable
+@inject NavigationManager Nav
+
+@* Second header row: one chip per category (same look as the library filter), each opening a menu of its
+   algorithms. <details> keeps it working on server-rendered pages too; js/nav.js closes menus on outside
+   click, Escape and navigation. *@
+<nav class="catbar" aria-label="Algorithms by category">
+    <div class="catbar-inner">
+        @foreach (var c in AlgorithmCatalog.Categories)
+        {
+            var algos = AlgorithmCatalog.All.Where(a => a.Category == c).ToList();
+            if (algos.Count == 0) continue;
+            <details class="catmenu cat-@c.Key" data-catmenu>
+                <summary class="chip @(Current?.Category == c ? "on" : "")" title="@c.Blurb">
+                    <span class="swatch"></span>@c.Name <span class="count">@algos.Count</span>
+                    <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+                </summary>
+                <div class="catmenu-list">
+                    <div class="catmenu-head"><b>@c.Name</b><small>@c.Blurb</small></div>
+                    @foreach (var a in algos)
+                    {
+                        <a href="/visualize/@a.Slug" class="@(a == Current ? "current" : "")" aria-current="@(a == Current ? "page" : null)">
+                            <span class="name">@a.Name</span>
+                            @if (a.Available)
+                            {
+                                <span class="difficulty" title="@a.Difficulty">
+                                    @for (int i = 0; i <= 2; i++)
+                                    {
+                                        <i class="@(i <= (int)a.Difficulty ? "on" : "")"></i>
+                                    }
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="badge">soon</span>
+                            }
+                        </a>
+                    }
+                </div>
+            </details>
+        }
+    </div>
+</nav>
+
+@code {
+    private AlgorithmDef? Current
+    {
+        get
+        {
+            string path = Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0];
+            return path.StartsWith("visualize/", StringComparison.OrdinalIgnoreCase)
+                ? AlgorithmCatalog.All.FirstOrDefault(a => string.Equals(a.Slug, path["visualize/".Length..], StringComparison.OrdinalIgnoreCase))
+                : null;
+        }
+    }
+
+    protected override void OnInitialized() => Nav.LocationChanged += OnLocationChanged;
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) =>
+        _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

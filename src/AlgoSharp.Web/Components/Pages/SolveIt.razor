@@ -10,6 +10,7 @@
 @inject Quotas RunQuotas
 @inject ICodeExecutor Executor
 @inject BrowserRunner Browser
+@inject SoundCues Sound
 @inject ILogger<SolveIt> Log
 
 @if (problem is null && Id is not null)
@@ -837,6 +838,7 @@ else
         if (!signedIn || problem is null || running) return;
         running = true;
         player.Load([], false);
+        _ = Sound.PlayAsync(SoundCues.Start);
         StateHasChanged();
         try
         {
@@ -848,6 +850,7 @@ else
                 Log.LogInformation("audit event=run outcome=throttled-web account={Account}", accountId);
                 compile = PlaygroundService.Check(problem, code);
                 run = new PlaygroundRun(compile, limited, [], null);
+                _ = Sound.PlayAsync(SoundCues.Fail);
                 return;
             }
             string caller = Executor is RemoteExecutor remote ? remote.CallerFor(accountId!) : accountId!;
@@ -860,6 +863,7 @@ else
             advice = run.Advice;
             await PushMarkers();
             selected = Math.Max(0, run.Cases.ToList().FindIndex(c => c.Verdict?.Passed != true));
+            _ = Sound.PlayAsync(RunCue(run));
             LoadCase(autoplay: true);
             if (userProblem is not null)
             {
@@ -872,6 +876,16 @@ else
         {
             running = false;
         }
+    }
+
+    /// <summary>All graded cases pass → success; anything failed or not run → fail; ungraded but clean → done.</summary>
+    private static string RunCue(PlaygroundRun r)
+    {
+        if (!r.Compile.Success || r.ExecutionError is not null || r.Cases.Count == 0) return SoundCues.Fail;
+        if (r.Cases.Any(c => c.Result is { Completed: false })) return SoundCues.Fail;
+        var graded = r.Cases.Where(c => c.Verdict?.Graded == true).ToList();
+        if (graded.Count > 0) return graded.All(c => c.Verdict!.Passed) ? SoundCues.Success : SoundCues.Fail;
+        return SoundCues.Done;
     }
 
     private void SelectCase(int index)
