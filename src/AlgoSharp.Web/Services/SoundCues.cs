@@ -38,7 +38,7 @@ public sealed class SoundCues(IJSRuntime js) : IAsyncDisposable
     public async Task<double> GetVolumeAsync()
     {
         try { return await (await ModuleAsync()).InvokeAsync<double>("getVolume"); }
-        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException) { return 0.6; }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException) { return 0.8; }
     }
 
     public async Task<double> SetVolumeAsync(double volume)

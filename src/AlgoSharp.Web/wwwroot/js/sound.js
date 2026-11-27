@@ -25,8 +25,8 @@ function store(key, value) {
 export function isMuted() { return stored(MUTE_KEY, 'on') === 'off'; }
 
 export function getVolume() {
-    const v = parseFloat(stored(VOLUME_KEY, '0.6'));
-    return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.6;
+    const v = parseFloat(stored(VOLUME_KEY, '0.8'));
+    return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.8;
 }
 
 export function setVolume(value) {
@@ -98,21 +98,21 @@ function tone(ac, out, { freq, at, length, type = 'sine', volume = 0.1, glideTo 
 
 const STEPS = {
     // comparison / condition: a soft, bright tick, pitched by the values compared
-    tick: (ac, out, t, p) => tone(ac, out, { freq: p ? p * 2 : 1320, at: t, length: 0.045, volume: 0.07 }),
+    tick: (ac, out, t, p) => tone(ac, out, { freq: p ? p * 2 : 1320, at: t, length: 0.08, volume: 0.32, shimmer: 0.15 }),
     // swap or movement: a short pop (quick downward glide)
-    pop: (ac, out, t, p) => { const f = p || 520; tone(ac, out, { freq: f * 1.7, glideTo: f * 0.85, at: t, length: 0.07, volume: 0.11 }); },
+    pop: (ac, out, t, p) => { const f = p || 520; tone(ac, out, { freq: f * 1.7, glideTo: f * 0.85, at: t, length: 0.1, volume: 0.4 }); },
     // element access, pointer move or variable update: the quietest, shortest click
-    click: (ac, out, t) => tone(ac, out, { freq: 2400, at: t, length: 0.018, type: 'triangle', volume: 0.045 }),
+    click: (ac, out, t) => tone(ac, out, { freq: 1700, at: t, length: 0.045, type: 'triangle', volume: 0.22 }),
     // a value reaches its final place / is found: a tiny two-note chime
     place: (ac, out, t, p) => {
         const f = (p || 440) * 2;
-        tone(ac, out, { freq: f, at: t, length: 0.12, type: 'triangle', volume: 0.07, shimmer: 0.2 });
-        tone(ac, out, { freq: f * 1.5, at: t + 0.05, length: 0.18, type: 'triangle', volume: 0.06, shimmer: 0.2 });
+        tone(ac, out, { freq: f, at: t, length: 0.14, type: 'triangle', volume: 0.28, shimmer: 0.2 });
+        tone(ac, out, { freq: f * 1.5, at: t + 0.05, length: 0.2, type: 'triangle', volume: 0.24, shimmer: 0.2 });
     },
     // error: gentle, low, two descending notes
     warn: (ac, out, t) => {
-        tone(ac, out, { freq: 330, at: t, length: 0.16, type: 'triangle', volume: 0.09 });
-        tone(ac, out, { freq: 262, at: t + 0.1, length: 0.24, type: 'triangle', volume: 0.09 });
+        tone(ac, out, { freq: 330, at: t, length: 0.18, type: 'triangle', volume: 0.32 });
+        tone(ac, out, { freq: 262, at: t + 0.1, length: 0.26, type: 'triangle', volume: 0.32 });
     },
 };
 
@@ -142,14 +142,14 @@ export function step(kind, pitch, force = false) {
 
 const CUES = {
     // C5 → G5: "here we go"
-    start: (ac, out, t) => { tone(ac, out, { freq: 523.25, at: t, length: 0.14, volume: 0.1, shimmer: 0.2 }); tone(ac, out, { freq: 783.99, at: t + 0.07, length: 0.2, volume: 0.1, shimmer: 0.2 }); },
+    start: (ac, out, t) => { tone(ac, out, { freq: 523.25, at: t, length: 0.14, volume: 0.24, shimmer: 0.2 }); tone(ac, out, { freq: 783.99, at: t + 0.07, length: 0.2, volume: 0.24, shimmer: 0.2 }); },
     // C5 E5 G5 C6: completed successfully
     success: (ac, out, t) => [523.25, 659.25, 783.99, 1046.5].forEach((f, i) =>
-        tone(ac, out, { freq: f, at: t + i * 0.08, length: i === 3 ? 0.6 : 0.28, type: 'triangle', volume: 0.1, shimmer: 0.25 })),
+        tone(ac, out, { freq: f, at: t + i * 0.08, length: i === 3 ? 0.6 : 0.28, type: 'triangle', volume: 0.2, shimmer: 0.25 })),
     // completed, nothing graded: a lighter two-note chime
-    done: (ac, out, t) => { tone(ac, out, { freq: 659.25, at: t, length: 0.25, type: 'triangle', volume: 0.1, shimmer: 0.25 }); tone(ac, out, { freq: 987.77, at: t + 0.09, length: 0.45, type: 'triangle', volume: 0.09, shimmer: 0.25 }); },
+    done: (ac, out, t) => { tone(ac, out, { freq: 659.25, at: t, length: 0.25, type: 'triangle', volume: 0.2, shimmer: 0.25 }); tone(ac, out, { freq: 987.77, at: t + 0.09, length: 0.45, type: 'triangle', volume: 0.18, shimmer: 0.25 }); },
     // finished with a failure or error: a gentle warning
-    fail: (ac, out, t) => { tone(ac, out, { freq: 392, at: t, length: 0.22, type: 'triangle', volume: 0.1 }); tone(ac, out, { freq: 311.13, at: t + 0.13, length: 0.38, type: 'triangle', volume: 0.1 }); },
+    fail: (ac, out, t) => { tone(ac, out, { freq: 392, at: t, length: 0.22, type: 'triangle', volume: 0.24 }); tone(ac, out, { freq: 311.13, at: t + 0.13, length: 0.38, type: 'triangle', volume: 0.24 }); },
 };
 
 export function play(kind) {
