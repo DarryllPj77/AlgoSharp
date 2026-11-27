@@ -39,7 +39,9 @@ services:
         sync: false
       - key: DataProtection__CertificatePassword
         sync: false
-      # Disabled until the separate executor service (deploy/executor) is running. Switching to Remote
+      # Kept Disabled for the public beta. "Browser" runs code on the visitor's own device in a .NET WebAssembly
+      # Web Worker (see docs/DEPLOYMENT.md); enable it only after its isolation has been reviewed.
+      # "Remote" stays off until the separate executor service (deploy/executor) is running. Switching to Remote
       # still only enables Run while that service answers with a valid signature and a passing
       # gVisor isolation self-test; otherwise Run stays off with the message below.
       - key: Sandbox__Mode

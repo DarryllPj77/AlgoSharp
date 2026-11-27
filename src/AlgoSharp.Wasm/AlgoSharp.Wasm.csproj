@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+
+  <!--
+    Browser-side runner: the same RunnerEngine the sandbox container uses, compiled for .NET WebAssembly.
+    It runs on the user's device inside a dedicated Web Worker (wwwroot/js/wasm-worker.js in AlgoSharp.Web),
+    never in the web server. Served from /wasm-runner/_framework/.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <StaticWebAssetBasePath>wasm-runner</StaticWebAssetBasePath>
+    <!-- User solutions are compiled on the server against the full BCL reference set, so nothing may be trimmed away. -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Real exception messages ("Index was outside the bounds of the array.") instead of resource keys. -->
+    <UseSystemResourceKeys>false</UseSystemResourceKeys>
+    <WasmEnableThreads>false</WasmEnableThreads>
+    <!-- No main loop: the worker calls exported methods. -->
+    <OutputType>Exe</OutputType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AlgoSharp.Tracing\AlgoSharp.Tracing.csproj" />
+    <Compile Include="..\AlgoSharp.Runner\RunnerEngine.cs" Link="RunnerEngine.cs" />
+  </ItemGroup>
+
+</Project>

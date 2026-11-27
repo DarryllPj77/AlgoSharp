@@ -9,6 +9,7 @@
 @inject NavigationManager Nav
 @inject Quotas RunQuotas
 @inject ICodeExecutor Executor
+@inject BrowserRunner Browser
 @inject ILogger<SolveIt> Log
 
 @if (problem is null && Id is not null)
@@ -107,7 +108,7 @@ else
                     else
                     {
                     <span class="sandbox-status @(status?.Available == true ? "ok" : "off")" title="@status?.Message">
-                        <i></i>@(status is null ? "Checking sandbox…" : status.Available ? "Sandbox ready" : "Execution disabled")
+                        <i></i>@(status is null ? "Checking sandbox…" : status.Available ? (InBrowser ? "Runs in your browser" : "Sandbox ready") : "Execution disabled")
                     </span>
                     @if (userProblem is not null)
                     {
@@ -569,6 +570,7 @@ else
     /// <summary>True when the latest run had graded cases and all of them passed.</summary>
     private bool AllPassed => run is { } r && r.Cases.Any(c => c.Verdict?.Graded == true) && r.Cases.Where(c => c.Verdict?.Graded == true).All(c => c.Verdict!.Passed);
 
+    private bool InBrowser => Executor is BrowserModeExecutor;
     private ProblemStatus Status => progress?.Status ?? ProblemStatus.NotStarted;
     private string StatusLabel => Status switch { ProblemStatus.InProgress => "In progress", ProblemStatus.Solved => "Solved", _ => "Not started" };
 
@@ -705,6 +707,7 @@ else
                 module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/editor.js");
                 editor = await module.InvokeAsync<IJSObjectReference>("create", editorHost, code, selfRef);
                 await PushMarkers();
+                if (InBrowser) await Browser.PrepareAsync(); // start the runtime download in the background
             }
             catch (JSException ex)
             {
@@ -829,7 +832,8 @@ else
 
     private async Task Visualize()
     {
-        // Signing in never bypasses the sandbox: Run still goes only to ICodeExecutor (Docker, or disabled).
+        // Signing in never bypasses the sandbox: code runs only in the configured sandbox (Docker, the remote
+        // executor, or this visitor's own WebAssembly worker), never in this process.
         if (!signedIn || problem is null || running) return;
         running = true;
         player.Load([], false);
@@ -847,7 +851,10 @@ else
                 return;
             }
             string caller = Executor is RemoteExecutor remote ? remote.CallerFor(accountId!) : accountId!;
-            run = await Service.RunAsync(problem, code, cases, caller);
+            // Browser mode: the instrumented assembly runs in this visitor's own .NET WebAssembly worker.
+            run = InBrowser
+                ? await Service.RunWithAsync(problem, code, cases, Browser.RunAsync)
+                : await Service.RunAsync(problem, code, cases, caller);
             Log.LogInformation("audit event=run outcome={Outcome} account={Account}", run.ExecutionError is null ? "executed" : "not-executed", accountId);
             compile = run.Compile;
             advice = run.Advice;

@@ -126,6 +126,29 @@ public static class HostingExtensions
         if (app.Configuration.GetValue<bool>("ReverseProxy:Enabled")) app.UseForwardedHeaders();
     }
 
+    /// <summary>
+    /// Locks down the in-browser runner's files (/wasm-runner/). A dedicated worker takes its CSP from its own
+    /// script's response, so the worker may load scripts and fetch files only from /wasm-runner/ and connect
+    /// nowhere else (no API calls, no other origin). The worker also removes network and storage APIs itself
+    /// once the runtime has loaded.
+    /// </summary>
+    public static void UseBrowserRunnerHeaders(this WebApplication app)
+    {
+        app.Use((ctx, next) =>
+        {
+            if (ctx.Request.Path.StartsWithSegments("/wasm-runner"))
+            {
+                string runner = $"{ctx.Request.Scheme}://{ctx.Request.Host}/wasm-runner/";
+                var headers = ctx.Response.Headers;
+                headers.ContentSecurityPolicy =
+                    $"default-src 'none'; script-src {runner} 'wasm-unsafe-eval'; connect-src {runner}; worker-src 'none'; base-uri 'none'; form-action 'none'";
+                headers.XContentTypeOptions = "nosniff";
+                headers["Cross-Origin-Resource-Policy"] = "same-origin";
+            }
+            return next();
+        });
+    }
+
     public static void MapAccountEndpoints(this WebApplication app)
     {
         // Sign-out is a POST with an antiforgery token (validated by UseAntiforgery for form posts),

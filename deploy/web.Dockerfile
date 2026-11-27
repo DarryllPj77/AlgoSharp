@@ -8,6 +8,8 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY AlgoSharp.slnx ./
 COPY src/ src/
+# The in-browser runner (served as static files) needs the browser-wasm runtime pack; restore it explicitly.
+RUN dotnet restore src/AlgoSharp.Wasm/AlgoSharp.Wasm.csproj
 RUN dotnet publish src/AlgoSharp.Web/AlgoSharp.Web.csproj -c Release -o /out --no-self-contained /p:UseAppHost=false
 
 # Only the Docker CLI binary (no daemon): it talks to the host engine via the mounted socket.

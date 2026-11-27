@@ -34,7 +34,7 @@ unavailable" rather than falling back to anything unsafe.
 | `DataProtection__KeysPath` | Directory (a volume) for the key ring that encrypts sign-in cookies and antiforgery tokens. Without a persistent path, every restart signs everyone out. |
 | `DataProtection__Store=Database` | Optional: keep the key ring in PostgreSQL instead (for several instances). |
 | `ReverseProxy__Enabled`, `ReverseProxy__KnownNetworks__0` | Trust `X-Forwarded-For/Proto` only from the proxy's network (default production setting: Caddy on `172.30.0.0/24`). |
-| `Sandbox__Mode` | `Docker` (default) or anything else to disable code execution. |
+| `Sandbox__Mode` | `Docker` (default), `Remote` (separate executor), `Browser` (visitor's device, WebAssembly) or anything else to disable code execution. |
 | `HttpsRedirection` | `false` behind a TLS-terminating proxy (production default). |
 
 Secrets never go in `appsettings*.json` or the repository. Locally use user-secrets; on a server use
@@ -171,3 +171,27 @@ Signed-in user -> Render (web) --HTTPS + HMAC-signed request--> Executor VM (Cad
 
 The executor reaches the Docker engine through its socket (root-equivalent on that VM). That's why the VM
 runs nothing else, holds no secrets besides the shared key, and user containers run under gVisor.
+
+## Browser execution (.NET WebAssembly, `Sandbox__Mode=Browser`)
+
+```
+Signed-in user -> Render compiles + instruments with Roslyn (never runs it)
+               -> page -> dedicated Web Worker (.NET WebAssembly, /wasm-runner/) runs RunnerEngine on the user's device
+               -> trace streamed back -> verdicts and frames built on the server -> existing Solve It playback
+```
+
+- The worker runs the same `RunnerEngine` as the container runner (`src/AlgoSharp.Wasm` links its source), so traces
+  are the real ones recorded by the instrumented code: same `TraceContract`, user's own names and structure.
+- Isolation layers: the Roslyn safety analyzer (no `System.Runtime`/JS interop, reflection, IO, network, threading,
+  unsafe code); a dedicated worker with no DOM or page access; a CSP on `/wasm-runner/` allowing scripts and fetches
+  only from `/wasm-runner/`; network and storage APIs removed from the worker once the runtime has loaded (the page
+  refuses a worker that doesn't confirm this); a fresh worker for every run.
+- Limits: 15 s wall clock (the page terminates the worker), 2000 trace steps, 8000 output characters, 256 MB managed
+  heap (Mono GC `max-heap-size`; allocations beyond it throw `OutOfMemoryException`), 10 cases per run. The
+  WebAssembly linear memory itself is capped only by the browser.
+- The browser is the user's own device: its answer is validated (size, depth, case count, clipped events/output)
+  but it can't be trusted for anything beyond that user's own view.
+- Download: about 7 MB (brotli) the first time, then cached. The runtime is not trimmed, because user code may call
+  any API in the referenced BCL assemblies.
+- Supported now: what the instrumenter supports (arrays, loops, conditions, arithmetic, strings, methods,
+  collections, LINQ, linked lists and trees). Not supported: async/await, iterators, threads, reflection, IO.

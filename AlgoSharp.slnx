@@ -6,6 +6,7 @@
     <Project Path="src/AlgoSharp.Playground/AlgoSharp.Playground.csproj" />
     <Project Path="src/AlgoSharp.Runner/AlgoSharp.Runner.csproj" />
     <Project Path="src/AlgoSharp.Tracing/AlgoSharp.Tracing.csproj" />
+    <Project Path="src/AlgoSharp.Wasm/AlgoSharp.Wasm.csproj" />
     <Project Path="src/AlgoSharp.Web/AlgoSharp.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">

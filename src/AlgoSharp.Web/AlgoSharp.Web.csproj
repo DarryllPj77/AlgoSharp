@@ -4,6 +4,8 @@
     <ProjectReference Include="..\AlgoSharp.Core\AlgoSharp.Core.csproj" />
     <ProjectReference Include="..\AlgoSharp.Playground\AlgoSharp.Playground.csproj" />
     <ProjectReference Include="..\AlgoSharp.Accounts\AlgoSharp.Accounts.csproj" />
+    <!-- Static files only: the .NET WebAssembly runner served at /wasm-runner/ and run in the visitor's browser. -->
+    <ProjectReference Include="..\AlgoSharp.Wasm\AlgoSharp.Wasm.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -28,6 +28,8 @@ builder.Services.AddSingleton(sandbox);
 builder.Services.AddSingleton<ICodeExecutor>(sp => sandbox.Mode.ToLowerInvariant() switch
 {
     "docker" => new DockerExecutor(sandbox),
+    // Browser: runs on the visitor's device in a .NET WebAssembly Web Worker; this server only compiles.
+    "browser" => new BrowserModeExecutor(sandbox.BrowserMessage),
     "remote" => new RemoteExecutor(sandbox.Remote,
         new HttpClient(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5), AllowAutoRedirect = false }),
         message => sp.GetRequiredService<ILogger<RemoteExecutor>>().LogWarning("{Message}", message)),
@@ -39,6 +41,7 @@ builder.Services.AddSingleton(new Quotas(
     TimeProvider.System));
 builder.Services.AddSingleton<PlaygroundService>();
 builder.Services.AddScoped<AlgoSharp.Web.Services.LocalLibrary>();
+builder.Services.AddScoped<AlgoSharp.Web.Services.BrowserRunner>();
 
 // Accounts: ASP.NET Core Identity on PostgreSQL (Neon). Optional: without a connection string the
 // site runs as before and the account pages say accounts are off.
@@ -107,6 +110,7 @@ app.UseRateLimiter();
 app.UseAntiforgery();
 
 app.MapAlgoSharpHealthChecks();
+app.UseBrowserRunnerHeaders();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

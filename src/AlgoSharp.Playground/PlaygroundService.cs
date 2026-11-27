@@ -36,15 +36,23 @@ public sealed class PlaygroundService(ICodeExecutor executor, SandboxOptions opt
             problem.Entry.DesignClass is null ? null : compile.MethodName);
 
     /// <param name="caller">Opaque per-account id; executors with per-account quotas require it.</param>
-    public async Task<PlaygroundRun> RunAsync(PlaygroundProblem problem, string code, IReadOnlyList<PlaygroundCase> cases, string? caller = null, CancellationToken ct = default)
+    public Task<PlaygroundRun> RunAsync(PlaygroundProblem problem, string code, IReadOnlyList<PlaygroundCase> cases, string? caller = null, CancellationToken ct = default) =>
+        RunWithAsync(problem, code, cases, (request, token) => executor is ICallerAwareExecutor perCaller && caller is not null
+            ? perCaller.RunAsync(request, caller, token)
+            : executor.RunAsync(request, token), ct);
+
+    /// <summary>
+    /// Same pipeline with a caller-supplied execution step, used for browser execution where the page's own
+    /// Web Worker runs the compiled assembly. Compilation, checking and frame building stay on the server.
+    /// </summary>
+    public async Task<PlaygroundRun> RunWithAsync(PlaygroundProblem problem, string code, IReadOnlyList<PlaygroundCase> cases,
+        Func<RunRequest, CancellationToken, Task<SandboxResult>> execute, CancellationToken ct = default)
     {
         var compile = CodeCompiler.Compile(code, problem.Entry);
         if (!compile.Success) return new(compile, null, [], null);
 
         var request = BuildRequest(problem, compile, cases, options.MaxEvents, options.MaxOutputChars);
-        var sandbox = executor is ICallerAwareExecutor perCaller && caller is not null
-            ? await perCaller.RunAsync(request, caller, ct)
-            : await executor.RunAsync(request, ct);
+        var sandbox = await execute(request, ct);
         if (!sandbox.Ok || sandbox.Response is null) return new(compile, sandbox.Error ?? "Execution failed.", [], Advise(problem, compile, []));
         if (!sandbox.Response.Ok) return new(compile, sandbox.Response.Error, [], Advise(problem, compile, []));
         return Interpret(problem, compile, code, cases, sandbox.Response);

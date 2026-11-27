@@ -17,6 +17,8 @@ public sealed class SandboxOptions
     public RemoteSandboxOptions Remote { get; set; } = new();
     /// <summary>Shown in place of Run when execution is disabled (e.g. hosts without an isolated sandbox).</summary>
     public string? DisabledMessage { get; set; }
+    /// <summary>Status text shown in Browser mode.</summary>
+    public string BrowserMessage { get; set; } = "Your code runs in this browser, in an isolated .NET WebAssembly worker. Nothing runs on the server.";
     public string DockerPath { get; set; } = "docker";
     public string Image { get; set; } = "algosharp-runner:1";
     public int TimeoutSeconds { get; set; } = 15;
