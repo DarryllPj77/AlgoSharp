@@ -230,6 +230,7 @@ else
 
     private readonly Player player = new();
     private bool cuePending;
+    private StepSounds stepSounds = null!;
     private AlgorithmDef? def;
     private OperationDef op = default!;
     private IVisualizerSession session = default!;
@@ -252,9 +253,11 @@ else
 
     protected override void OnInitialized()
     {
+        stepSounds = new StepSounds(Sound);
         player.Changed += () => _ = InvokeAsync(() =>
         {
             // The run's animation reached its last step: celebrate, or a softer tone if it ended in an error.
+            stepSounds.OnChanged(player, skip: cuePending && player.AtEnd);
             if (cuePending && player.AtEnd && player.Steps.Count > 1)
             {
                 cuePending = false;

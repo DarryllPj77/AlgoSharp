@@ -55,6 +55,27 @@ const CUES = {
     fail: ac => { const t = ac.currentTime; note(ac, 392.0, t, 0.22, { type: 'triangle', volume: 0.1, shimmer: 0 }); note(ac, 311.13, t + 0.13, 0.38, { type: 'triangle', volume: 0.1, shimmer: 0 }); },
 };
 
+// Per-step sounds while a visualization plays: quieter and shorter than the cues above so 4× playback
+// (a step every 250 ms) stays pleasant. Pitches come from the values involved (220–880 Hz).
+const soft = { volume: 0.05, shimmer: 0 };
+const STEPS = {
+    tick: (ac, t) => note(ac, 1046.5, t, 0.04, { volume: 0.025, shimmer: 0 }),
+    compare: (ac, t, p) => p.forEach((f, i) => note(ac, f, t + i * 0.035, 0.08, soft)),
+    swap: (ac, t, p) => p.forEach((f, i) => note(ac, f, t + i * 0.05, 0.11, { type: 'triangle', volume: 0.065, shimmer: 0.15 })),
+    place: (ac, t, p) => note(ac, (p[0] ?? 523.25) * 2, t, 0.22, { type: 'triangle', volume: 0.06, shimmer: 0.3 }),
+    add: (ac, t, p) => { const f = p[0] ?? 523.25; note(ac, f, t, 0.08, soft); note(ac, f * 1.5, t + 0.05, 0.12, soft); },
+    remove: (ac, t, p) => { const f = p[0] ?? 523.25; note(ac, f * 1.5, t, 0.08, soft); note(ac, f, t + 0.05, 0.12, soft); },
+    error: (ac, t) => note(ac, 196, t, 0.22, { type: 'triangle', volume: 0.07, shimmer: 0 }),
+};
+
+export function step(kind, pitches) {
+    if (isMuted() || !STEPS[kind]) return;
+    const ac = audio();
+    if (!ac) return;
+    const p = (Array.isArray(pitches) ? pitches : []).filter(f => Number.isFinite(f) && f > 20 && f < 5000).slice(0, 2);
+    try { STEPS[kind](ac, ac.currentTime, p); } catch { /* audio is a nicety */ }
+}
+
 export function play(kind) {
     if (isMuted() || !CUES[kind]) return;
     const ac = audio();

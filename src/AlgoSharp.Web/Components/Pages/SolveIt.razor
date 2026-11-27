@@ -602,7 +602,17 @@ else
 
     private TraceFrame? Frame => Selected is { Frames.Count: > 0 } o ? o.Frames[Math.Min(player.Index, o.Frames.Count - 1)] : null;
 
-    protected override void OnInitialized() => player.Changed += () => _ = InvokeAsync(StateHasChanged);
+    private StepSounds? stepSounds;
+
+    protected override void OnInitialized()
+    {
+        stepSounds = new StepSounds(Sound);
+        player.Changed += () => _ = InvokeAsync(() =>
+        {
+            stepSounds.OnChanged(player);
+            StateHasChanged();
+        });
+    }
 
     protected override async Task OnParametersSetAsync()
     {

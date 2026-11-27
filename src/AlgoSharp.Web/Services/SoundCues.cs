@@ -20,6 +20,15 @@ public sealed class SoundCues(IJSRuntime js) : IAsyncDisposable
         catch (InvalidOperationException) { } // prerendering: no JS yet
     }
 
+    /// <summary>The per-step playback sound (see <see cref="StepSounds"/>).</summary>
+    public async Task StepAsync(string kind, double[] pitches)
+    {
+        try { await (await ModuleAsync()).InvokeVoidAsync("step", kind, pitches); }
+        catch (JSException) { }
+        catch (JSDisconnectedException) { }
+        catch (InvalidOperationException) { }
+    }
+
     public async Task<bool> IsMutedAsync()
     {
         try { return await (await ModuleAsync()).InvokeAsync<bool>("isMuted"); }
