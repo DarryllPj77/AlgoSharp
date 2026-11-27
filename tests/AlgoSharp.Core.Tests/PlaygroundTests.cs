@@ -9,6 +9,7 @@ namespace AlgoSharp.Core.Tests;
 /// End-to-end tests of compile → instrument → run → interpret. The runner is called in-process
 /// here only with test-authored code; the web app always goes through the sandbox executor.
 /// </summary>
+[Collection(TracerCollection.Name)]
 public class PlaygroundTests
 {
     private static PlaygroundProblem Problem(string slug) => PlaygroundCatalog.Find(slug)!;

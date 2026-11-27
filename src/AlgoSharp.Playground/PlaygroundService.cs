@@ -55,7 +55,15 @@ public sealed class PlaygroundService(ICodeExecutor executor, SandboxOptions opt
         var sandbox = await execute(request, ct);
         if (!sandbox.Ok || sandbox.Response is null) return new(compile, sandbox.Error ?? "Execution failed.", [], Advise(problem, compile, []));
         if (!sandbox.Response.Ok) return new(compile, sandbox.Response.Error, [], Advise(problem, compile, []));
-        return Interpret(problem, compile, code, cases, sandbox.Response);
+        try
+        {
+            return Interpret(problem, compile, code, cases, sandbox.Response);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IndexOutOfRangeException or KeyNotFoundException or FormatException or System.Text.Json.JsonException)
+        {
+            // Browser results are untrusted input: a malformed trace must not take the circuit down.
+            return new(compile, "The run finished, but its trace couldn't be displayed.", [], Advise(problem, compile, []));
+        }
     }
 
     /// <summary>Turns a runner response into verdicts, frames and advice. Public so it can be tested without a sandbox.</summary>

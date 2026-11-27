@@ -140,8 +140,11 @@ public static class HostingExtensions
             {
                 string runner = $"{ctx.Request.Scheme}://{ctx.Request.Host}/wasm-runner/";
                 var headers = ctx.Response.Headers;
+                // worker-src must allow the worker's own script: Firefox checks it against the worker itself
+                // ("'none'" stops it loading). Nested workers are still limited to these files, and the worker
+                // removes its Worker constructor after start-up anyway.
                 headers.ContentSecurityPolicy =
-                    $"default-src 'none'; script-src {runner} 'wasm-unsafe-eval'; connect-src {runner}; worker-src 'none'; base-uri 'none'; form-action 'none'";
+                    $"default-src 'none'; script-src {runner} 'wasm-unsafe-eval'; connect-src {runner}; worker-src {runner}; base-uri 'none'; form-action 'none'";
                 headers.XContentTypeOptions = "nosniff";
                 headers["Cross-Origin-Resource-Policy"] = "same-origin";
             }

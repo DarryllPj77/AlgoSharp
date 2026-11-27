@@ -5,6 +5,7 @@ using AlgoSharp.Runner;
 
 namespace AlgoSharp.Core.Tests;
 
+[Collection(TracerCollection.Name)]
 public class ImportTests
 {
     internal const string Lesson = """

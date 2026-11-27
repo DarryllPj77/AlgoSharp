@@ -183,14 +183,20 @@ Signed-in user -> Render compiles + instruments with Roslyn (never runs it)
 - The worker runs the same `RunnerEngine` as the container runner (`src/AlgoSharp.Wasm` links its source), so traces
   are the real ones recorded by the instrumented code: same `TraceContract`, user's own names and structure.
 - Isolation layers: the Roslyn safety analyzer (no `System.Runtime`/JS interop, reflection, IO, network, threading,
-  unsafe code); a dedicated worker with no DOM or page access; a CSP on `/wasm-runner/` allowing scripts and fetches
-  only from `/wasm-runner/`; network and storage APIs removed from the worker once the runtime has loaded (the page
+  unsafe code); a dedicated worker with no DOM or page access; a CSP on `/wasm-runner/` allowing scripts, fetches and
+  nested workers only from `/wasm-runner/` (`worker-src 'none'` would stop Firefox loading the worker itself); network and storage APIs removed from the worker once the runtime has loaded (the page
   refuses a worker that doesn't confirm this); a fresh worker for every run.
 - Limits: 15 s wall clock (the page terminates the worker), 2000 trace steps, 8000 output characters, 256 MB managed
   heap (Mono GC `max-heap-size`; allocations beyond it throw `OutOfMemoryException`), 10 cases per run. The
   WebAssembly linear memory itself is capped only by the browser.
 - The browser is the user's own device: its answer is validated (size, depth, case count, clipped events/output)
   but it can't be trusted for anything beyond that user's own view.
+- The server refuses browser traces outside the tracer's own bounds (64 items per value, node and variable counts,
+  string lengths) before building frames, so a modified browser can't send structures that exhaust the server.
+- Progress and "solved" state live only in the user's own IndexedDB (they could already set them by hand); the
+  server stores no grades, so browser results can't change anything authoritative.
+- Verified in Chromium and Firefox 161 against the production image (HTTPS, Production settings). Safari/WebKit has
+  not been tested. Browsers without Web Workers or WebAssembly get a clear "can't run code" message.
 - Download: about 7 MB (brotli) the first time, then cached. The runtime is not trimmed, because user code may call
   any API in the referenced BCL assemblies.
 - Supported now: what the instrumenter supports (arrays, loops, conditions, arithmetic, strings, methods,

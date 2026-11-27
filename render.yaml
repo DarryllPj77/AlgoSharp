@@ -39,13 +39,12 @@ services:
         sync: false
       - key: DataProtection__CertificatePassword
         sync: false
-      # Kept Disabled for the public beta. "Browser" runs code on the visitor's own device in a .NET WebAssembly
-      # Web Worker (see docs/DEPLOYMENT.md); enable it only after its isolation has been reviewed.
-      # "Remote" stays off until the separate executor service (deploy/executor) is running. Switching to Remote
-      # still only enables Run while that service answers with a valid signature and a passing
-      # gVisor isolation self-test; otherwise Run stays off with the message below.
+      # Browser: signed-in users' code runs on their own device in a locked-down .NET WebAssembly Web Worker
+      # (see docs/DEPLOYMENT.md); this server only compiles it. Verified in Chromium and Firefox against this image.
+      # Set Disabled to turn Run off again. "Remote" stays off until the separate executor (deploy/executor) is
+      # running and passes its gVisor isolation self-test.
       - key: Sandbox__Mode
-        value: Disabled
+        value: Browser
       - key: Sandbox__Remote__Url          # e.g. https://<vm-ip-with-dashes>.sslip.io
         sync: false
       - key: Sandbox__Remote__Key          # same secret as Executor__Key on the executor VM

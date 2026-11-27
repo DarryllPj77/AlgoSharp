@@ -10,6 +10,7 @@ namespace AlgoSharp.Core.Tests;
 /// Browser mode: the server compiles, the visitor's WebAssembly worker runs the same RunnerEngine, and the
 /// server validates what comes back. Here RunnerEngine runs in-process to produce a genuine response.
 /// </summary>
+[Collection(TracerCollection.Name)]
 public sealed class BrowserExecutionTests
 {
     private const string TwoSum = """
@@ -94,6 +95,47 @@ public sealed class BrowserExecutionTests
         Assert.False(result.Ok);
         Assert.Null(result.Response);
         Assert.Contains(message, result.Error);
+    }
+
+    public static TheoryData<string> Slugs => [.. PlaygroundCatalog.All.Select(p => p.Slug)];
+
+    [Theory]
+    [MemberData(nameof(Slugs))]
+    public void Every_real_catalog_trace_passes_browser_validation(string slug)
+    {
+        var problem = PlaygroundCatalog.Find(slug)!;
+        var compile = PlaygroundService.Check(problem, Solutions.BySlug[slug]);
+        var request = PlaygroundService.BuildRequest(problem, compile, problem.DefaultCases, 2000, 8000);
+        string response = JsonSerializer.Serialize(RunnerEngine.Execute(request), TraceJson.Options);
+        var result = BrowserExecution.Interpret(Envelope(new { status = "ok", response }), request, 15);
+        Assert.True(result.Ok, result.Error);
+        var run = PlaygroundService.Interpret(problem, compile, Solutions.BySlug[slug], problem.DefaultCases, result.Response!);
+        Assert.All(run.Cases, c => Assert.True(c.Verdict?.Passed == true, slug + ": " + c.Verdict));
+    }
+
+    [Fact]
+    public void Forged_traces_outside_tracer_limits_are_refused_not_drawn()
+    {
+        var request = Request(TwoSum).Request;
+        SandboxResult Send(CaseResult c) => BrowserExecution.Interpret(
+            Envelope(new { status = "ok", response = JsonSerializer.Serialize(new RunResponse(true, null, [c]), TraceJson.Options) }), request, 15);
+        CaseResult With(params TraceVar[] vars) =>
+            new("c", true, "[]", null, null, null, false, "", [new TraceEvent(0, TraceEventKind.Line, 1, "M", 0, null, null, vars, [])]);
+
+        // A 100k-node chain dressed up as a tree: the frame builder walks it recursively, so it must never get there.
+        var deep = Enumerable.Range(1, 100_000).Select(i => new TraceNode(i, "1", i + 1, 0)).ToList();
+        var forged = Send(With(new TraceVar("root", new TraceValue("tree", Ref: 1, Nodes: deep))));
+        Assert.False(forged.Ok);
+        Assert.Contains("outside AlgoSharp's limits", forged.Error);
+
+        Assert.False(Send(With(new TraceVar("s", new TraceValue("scalar", Text: new string('x', 100_000))))).Ok);
+        Assert.False(Send(With([.. Enumerable.Range(0, 300).Select(i => new TraceVar("v" + i, new TraceValue("scalar", Text: "1")))])).Ok);
+        Assert.True(Send(With(new TraceVar("n", new TraceValue("scalar", Text: "1")))).Ok);
+
+        // Missing required fields are refused rather than crashing the circuit.
+        string nulls = """{"ok":true,"cases":[{"label":"c","completed":true,"output":"","events":[{"seq":0,"kind":"Line","line":1,"method":"M","depth":0}]}]}""";
+        Assert.False(BrowserExecution.Interpret(Envelope(new { status = "ok", response = nulls }), request, 15).Ok);
+        Assert.False(BrowserExecution.Interpret(Envelope(new { status = "ok", response = """{"ok":true}""" }), request, 15).Ok);
     }
 
     [Fact]

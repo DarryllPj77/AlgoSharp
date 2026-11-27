@@ -48,7 +48,8 @@ public static class BrowserExecution
             case "startup":
                 return Fail($"The in-browser runner couldn't start: {Clip(envelope.Error)}");
             case "crashed":
-                return Fail($"The in-browser runner stopped unexpectedly: {Clip(envelope.Error)}");
+                return Fail("The in-browser runner stopped unexpectedly. This usually means a stack overflow from recursion " +
+                            "that never ends (for example a lambda calling itself), which the step limit can't catch.");
             default:
                 return Fail("The browser runner returned an unknown status.");
         }
@@ -62,8 +63,11 @@ public static class BrowserExecution
         {
             return Fail("The browser runner returned an unreadable trace.");
         }
-        if (response is null) return Fail("The browser runner returned no result.");
+        if (response?.Cases is null) return Fail("The browser runner returned no result.");
         if (response.Cases.Count > request.Cases.Count) return Fail("The browser runner returned more results than test cases.");
+        // A modified browser can send anything. The real tracer never exceeds these bounds, and the server's
+        // frame builder walks node links recursively, so anything outside them is refused rather than drawn.
+        if (!response.Cases.All(WithinTracerLimits)) return Fail("The browser runner returned a trace outside AlgoSharp's limits.");
 
         // Keep the trace within the limits the request asked for (Tr stops at MaxEvents; allow the final events).
         var cases = response.Cases.Select(c => c with
@@ -73,6 +77,27 @@ public static class BrowserExecution
         }).ToList();
         return new SandboxResult(true, null, response with { Cases = cases });
     }
+
+    // Generous multiples of the tracer's own caps (64 items per value, 40-character strings).
+    private const int MaxValueItems = 65, MaxVarsPerEvent = 256, MaxNodesPerEvent = 2048, MaxText = 2048, MaxName = 256;
+
+    private static bool WithinTracerLimits(CaseResult? c) =>
+        c is { Events: not null, Output: not null } && c.Output.Length <= 1024 * 1024 &&
+        Short(c.Label, MaxName) && Short(c.ErrorType, MaxName) && Short(c.ErrorMessage, 4096) && Short(c.ResultJson, 256 * 1024) &&
+        c.Events.All(e => e is { Vars: not null, Accesses: not null } &&
+            e.Line is >= 0 and < 100_000 && e.Depth is >= 0 and < 100_000 && Short(e.Method, MaxName) && Short(e.Text, MaxText) &&
+            e.Vars.Count <= MaxVarsPerEvent && e.Accesses.Count <= MaxVarsPerEvent &&
+            e.Vars.All(v => v?.Value is not null) && e.Vars.Sum(v => v.Value.Nodes?.Count ?? 0) <= MaxNodesPerEvent &&
+            e.Vars.All(v => Short(v.Name, MaxName) && ValueOk(v.Value)) &&
+            e.Accesses.All(a => a is not null && Short(a.Key, MaxText) && Short(a.IndexName, MaxName) && Short(a.Kind, MaxName)));
+
+    private static bool ValueOk(TraceValue v) =>
+        Short(v.Kind, MaxName) && Short(v.Type, MaxName) && Short(v.Text, MaxText) &&
+        (v.Items?.Count ?? 0) <= MaxValueItems && (v.Items?.All(i => Short(i, MaxText)) ?? true) &&
+        (v.Entries?.Count ?? 0) <= MaxValueItems && (v.Entries?.All(e => e is not null && Short(e.Key, MaxText) && Short(e.Value, MaxText)) ?? true) &&
+        (v.Nodes?.Count ?? 0) <= MaxValueItems && (v.Nodes?.All(n => n is not null && Short(n.Value, MaxText)) ?? true);
+
+    private static bool Short(string? s, int max) => s is null || s.Length <= max;
 
     private static SandboxResult Fail(string message) => new(false, message, null);
 
