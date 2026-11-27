@@ -229,7 +229,6 @@ else
     [Parameter] public string Slug { get; set; } = "";
 
     private readonly Player player = new();
-    private bool cuePending;
     private StepSounds stepSounds = null!;
     private AlgorithmDef? def;
     private OperationDef op = default!;
@@ -256,13 +255,8 @@ else
         stepSounds = new StepSounds(Sound);
         player.Changed += () => _ = InvokeAsync(() =>
         {
-            // The run's animation reached its last step: celebrate, or a softer tone if it ended in an error.
-            stepSounds.OnChanged(player, skip: cuePending && player.AtEnd);
-            if (cuePending && player.AtEnd && player.Steps.Count > 1)
-            {
-                cuePending = false;
-                _ = Sound.PlayAsync(Current?.IsError == true ? SoundCues.Fail : SoundCues.Success);
-            }
+            // A sound per real step; arriving at the last step celebrates, or warns if it ended in an error.
+            stepSounds.OnChanged(player, end => end.IsError ? SoundCues.Fail : SoundCues.Success);
             StateHasChanged();
         });
     }
@@ -385,7 +379,6 @@ else
         else if (session.Persistent && session.Text is { } text) dataText = text;
         dataError = null;
         _ = Sound.PlayAsync(SoundCues.Start);
-        cuePending = true;
         player.Load([before, .. result.Steps], autoplay: true);
     }
 

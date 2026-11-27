@@ -16,9 +16,24 @@
         <div class="topbar-right">
             @if (RendererInfo.IsInteractive)
             {
-                <button class="icon-btn" title="@(muted ? "Sound effects off" : "Sound effects on")" aria-label="Toggle sound effects" aria-pressed="@(muted ? "false" : "true")" @onclick="ToggleSound">
-                    <Icon Name="@(muted ? "mute" : "volume")" />
-                </button>
+                <details class="soundmenu" data-catmenu>
+                    <summary class="icon-btn" title="Sound effects" aria-label="Sound effects settings">
+                        <Icon Name="@(muted ? "mute" : "volume")" />
+                    </summary>
+                    <div class="soundmenu-panel">
+                        <label class="sound-row">
+                            <span>Sound effects</span>
+                            <input type="checkbox" role="switch" checked="@(!muted)" @onchange="e => SetSound(e.Value is true)" />
+                        </label>
+                        <label class="sound-row volume @(muted ? "off" : "")">
+                            <span>Volume</span>
+                            <input type="range" min="0" max="100" step="5" value="@volume" disabled="@muted" aria-label="Sound volume"
+                                   @onchange="e => SetVolume(e.Value)" />
+                            <output>@volume%</output>
+                        </label>
+                        <small>A soft sound for each step: tick for comparisons, pop for swaps and moves, click for reads and updates.</small>
+                    </div>
+                </details>
                 <button class="icon-btn" title="Toggle light / dark" aria-label="Toggle color theme" @onclick="ToggleTheme">
                     <Icon Name="@(theme == "dark" ? "sun" : "moon")" />
                 </button>
@@ -53,6 +68,7 @@
     private IJSObjectReference? module;
     private string theme = "dark";
     private bool muted;
+    private int volume = 60;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -60,10 +76,17 @@
         module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/app.js");
         theme = await module.InvokeAsync<string>("getTheme");
         muted = await Sound.IsMutedAsync();
+        volume = (int)Math.Round(await Sound.GetVolumeAsync() * 100);
         StateHasChanged();
     }
 
-    private async Task ToggleSound() => muted = await Sound.ToggleMutedAsync();
+    private async Task SetSound(bool on) => muted = await Sound.SetMutedAsync(!on);
+
+    private async Task SetVolume(object? value)
+    {
+        if (!int.TryParse(value?.ToString(), out int v)) return;
+        volume = (int)Math.Round(await Sound.SetVolumeAsync(Math.Clamp(v, 0, 100) / 100.0) * 100);
+    }
 
     private async Task ToggleTheme()
     {

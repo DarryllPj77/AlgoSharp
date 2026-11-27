@@ -609,7 +609,7 @@ else
         stepSounds = new StepSounds(Sound);
         player.Changed += () => _ = InvokeAsync(() =>
         {
-            stepSounds.OnChanged(player);
+            stepSounds.OnChanged(player, _ => CaseCue(Selected));
             StateHasChanged();
         });
     }
@@ -873,7 +873,8 @@ else
             advice = run.Advice;
             await PushMarkers();
             selected = Math.Max(0, run.Cases.ToList().FindIndex(c => c.Verdict?.Passed != true));
-            _ = Sound.PlayAsync(RunCue(run));
+            // With a trace to play, the result sounds when playback reaches the end; otherwise right away.
+            if (Selected is not { Frames.Count: > 1 }) _ = Sound.PlayAsync(RunCue(run));
             LoadCase(autoplay: true);
             if (userProblem is not null)
             {
@@ -897,6 +898,15 @@ else
         if (graded.Count > 0) return graded.All(c => c.Verdict!.Passed) ? SoundCues.Success : SoundCues.Fail;
         return SoundCues.Done;
     }
+
+    /// <summary>Completion cue for the case being played: passed → success, failed → fail, ungraded → done.</summary>
+    private static string CaseCue(CaseOutcome? c) => c switch
+    {
+        { Verdict.Passed: true } => SoundCues.Success,
+        { Result.Completed: false } => SoundCues.Fail,
+        { Verdict.Graded: true } => SoundCues.Fail,
+        _ => SoundCues.Done,
+    };
 
     private void SelectCase(int index)
     {

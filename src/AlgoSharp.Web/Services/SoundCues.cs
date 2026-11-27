@@ -21,9 +21,9 @@ public sealed class SoundCues(IJSRuntime js) : IAsyncDisposable
     }
 
     /// <summary>The per-step playback sound (see <see cref="StepSounds"/>).</summary>
-    public async Task StepAsync(string kind, double[] pitches)
+    public async Task StepAsync(string kind, double pitch)
     {
-        try { await (await ModuleAsync()).InvokeVoidAsync("step", kind, pitches); }
+        try { await (await ModuleAsync()).InvokeVoidAsync("step", kind, Math.Round(pitch, 1)); }
         catch (JSException) { }
         catch (JSDisconnectedException) { }
         catch (InvalidOperationException) { }
@@ -33,6 +33,24 @@ public sealed class SoundCues(IJSRuntime js) : IAsyncDisposable
     {
         try { return await (await ModuleAsync()).InvokeAsync<bool>("isMuted"); }
         catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException) { return false; }
+    }
+
+    public async Task<double> GetVolumeAsync()
+    {
+        try { return await (await ModuleAsync()).InvokeAsync<double>("getVolume"); }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException) { return 0.6; }
+    }
+
+    public async Task<double> SetVolumeAsync(double volume)
+    {
+        try { return await (await ModuleAsync()).InvokeAsync<double>("setVolume", volume); }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException) { return volume; }
+    }
+
+    public async Task<bool> SetMutedAsync(bool muted)
+    {
+        try { return await (await ModuleAsync()).InvokeAsync<bool>("setMuted", muted); }
+        catch (Exception ex) when (ex is JSException or JSDisconnectedException or InvalidOperationException) { return muted; }
     }
 
     public async Task<bool> ToggleMutedAsync()
