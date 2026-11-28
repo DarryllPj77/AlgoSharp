@@ -43,7 +43,11 @@ public sealed record SandboxStatus(bool Available, string Message)
 /// </summary>
 public sealed record IsolationReport(bool Passed, string Runtime, DateTimeOffset CheckedAt, IReadOnlyDictionary<string, string> Checks, string? Failure);
 
-public sealed record SandboxResult(bool Ok, string? Error, RunResponse? Response);
+public sealed record SandboxResult(bool Ok, string? Error, RunResponse? Response)
+{
+    /// <summary>Short failure category for metrics (timeout, crashed, invalid-trace, ...).</summary>
+    public string? FailureKind { get; init; }
+}
 
 /// <summary>Executes instrumented assemblies somewhere isolated from the web server.</summary>
 public interface ICodeExecutor

@@ -44,12 +44,12 @@ public sealed class BrowserRunner(IJSRuntime js, SandboxOptions options, ILogger
         }
         catch (OperationCanceledException)
         {
-            return new SandboxResult(false, "The browser didn't answer in time.", null);
+            return new SandboxResult(false, "The browser didn't answer in time.", null) { FailureKind = "timeout" };
         }
         catch (Exception ex) when (ex is JSException or InvalidOperationException or IOException)
         {
             log.LogWarning("Browser run failed: {Type}: {Message}", ex.GetType().Name, ex.Message);
-            return new SandboxResult(false, "The in-browser runner failed: the trace was missing or too large.", null);
+            return new SandboxResult(false, "The in-browser runner failed: the trace was missing or too large.", null) { FailureKind = "invalid-trace" };
         }
     }
 

@@ -72,15 +72,28 @@ public sealed class PlaygroundService(ICodeExecutor executor, SandboxOptions opt
         var request = BuildRequest(problem, compile, cases, options.MaxEvents, options.MaxOutputChars);
         compile = compile with { Assembly = null }; // the request carries it now; don't keep a second copy per session
         var sandbox = await execute(request, ct);
-        if (!sandbox.Ok || sandbox.Response is null) return new(compile, sandbox.Error ?? "Execution failed.", [], Advise(problem, compile, []));
-        if (!sandbox.Response.Ok) return new(compile, sandbox.Response.Error, [], Advise(problem, compile, []));
+        if (!sandbox.Ok || sandbox.Response is null)
+        {
+            ExecutionMetrics.Record(sandbox.FailureKind ?? "failed");
+            return new(compile, sandbox.Error ?? "Execution failed.", [], Advise(problem, compile, []));
+        }
+        if (!sandbox.Response.Ok)
+        {
+            ExecutionMetrics.Record("failed");
+            return new(compile, sandbox.Response.Error, [], Advise(problem, compile, []));
+        }
         try
         {
-            return Interpret(problem, compile, code, cases, sandbox.Response);
+            long started = System.Diagnostics.Stopwatch.GetTimestamp();
+            var interpreted = Interpret(problem, compile, code, cases, sandbox.Response);
+            ExecutionMetrics.RecordInterpret(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            ExecutionMetrics.Record("ok");
+            return interpreted;
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IndexOutOfRangeException or KeyNotFoundException or FormatException or System.Text.Json.JsonException)
         {
             // Browser results are untrusted input: a malformed trace must not take the circuit down.
+            ExecutionMetrics.Record("render-failed");
             return new(compile, "The run finished, but its trace couldn't be displayed.", [], Advise(problem, compile, []));
         }
     }

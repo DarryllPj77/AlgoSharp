@@ -16,6 +16,12 @@
     <!-- Small instances (Render Free: 0.1 CPU, 512 MB): workstation, non-concurrent GC keeps the heap and threads lean. -->
     <ServerGarbageCollector>false</ServerGarbageCollector>
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <!-- Container builds (deploy/web.Dockerfile passes AlgoSharpReadyToRun=true): precompile the app and Roslyn to
+         native code, so a cold 0.1-CPU instance doesn't run Roslyn on slow unoptimised JIT code for its first minutes.
+         Set here rather than with `dotnet publish -r`, which would also retarget the browser-wasm runner project. -->
+    <RuntimeIdentifier Condition="'$(AlgoSharpReadyToRun)' == 'true'">linux-x64</RuntimeIdentifier>
+    <PublishReadyToRun Condition="'$(AlgoSharpReadyToRun)' == 'true'">true</PublishReadyToRun>
+    <SelfContained Condition="'$(AlgoSharpReadyToRun)' == 'true'">false</SelfContained>
     <UserSecretsId>78ada1e9-8127-46d6-9548-b364f85fc082</UserSecretsId>
   </PropertyGroup>
 

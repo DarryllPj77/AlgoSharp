@@ -1428,3 +1428,14 @@ a.card:hover .pv-table span { animation: pv-fill 2.4s steps(1) infinite; animati
 .workspace-gate .body { padding: 22px 22px 24px; }
 .workspace-gate h2 { font-size: 19px; letter-spacing: -0.01em; margin: 0 0 8px; }
 .workspace-gate p { color: var(--text-2); font-size: 14px; margin: 0; max-width: 520px; }
+
+/* ---------- server busy (new sessions refused) ---------- */
+#server-busy {
+    position: sticky; top: 0; z-index: 70;
+    padding: 10px 24px; text-align: center; font-size: 13.5px;
+    background: color-mix(in srgb, var(--st-key, #f5b942) 16%, var(--surface));
+    border-bottom: 1px solid color-mix(in srgb, var(--st-key, #f5b942) 45%, var(--line));
+    color: var(--text);
+}
+#server-busy button { margin-left: 8px; padding: 3px 10px; border-radius: 7px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); cursor: pointer; }
+#server-busy span { color: var(--text-3); margin-left: 6px; font-family: var(--font-mono); font-size: 12px; }

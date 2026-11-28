@@ -8,27 +8,59 @@ namespace AlgoSharp.Web.Hosting;
 
 public sealed class ResourceOptions
 {
-    /// <summary>Interactive sessions (Blazor circuits) at once. New ones get 503 + Retry-After beyond this.</summary>
-    public int MaxCircuits { get; set; } = 60;
+    /// <summary>
+    /// Connected interactive sessions (Blazor circuits) at once; new connections get 503 + Retry-After beyond this.
+    /// 35 on Render Free: measured 3-7 MB per active Solve It session on top of ~330 MiB with 5 sessions.
+    /// </summary>
+    public int MaxCircuits { get; set; } = 35;
 
     /// <summary>How often the resource summary is logged.</summary>
     public int MonitorSeconds { get; set; } = 60;
 }
 
-/// <summary>Counts live interactive sessions (one <see cref="CircuitHandler"/> per circuit feeds one shared counter).</summary>
+/// <summary>
+/// Counts interactive sessions (one <see cref="CircuitHandler"/> per circuit feeds one shared counter) and admits new
+/// connections against a cap. A connection reserves its place at negotiate time; the reservation turns into a
+/// connected session when the connection comes up, or expires after 15 s. Without reservations, a burst of
+/// simultaneous connects would all pass the check before any of them was counted.
+/// </summary>
 public sealed class CircuitCounter
 {
-    private int active, peak;
+    private static readonly TimeSpan ReservationLifetime = TimeSpan.FromSeconds(15);
+    private readonly Queue<long> reservations = new();
+    private readonly object gate = new();
+    private int active, connected, peak;
+
+    /// <summary>Circuits held in memory (connected or retained after a disconnect).</summary>
     public int Active => Volatile.Read(ref active);
+    /// <summary>Circuits with a live connection.</summary>
+    public int Connected => Volatile.Read(ref connected);
     public int Peak => Volatile.Read(ref peak);
 
-    internal void Opened()
+    public bool TryReserve(int max)
     {
-        int now = Interlocked.Increment(ref active);
-        int p;
-        while (now > (p = Volatile.Read(ref peak)) && Interlocked.CompareExchange(ref peak, now, p) != p) { }
+        lock (gate)
+        {
+            long now = Environment.TickCount64;
+            while (reservations.Count > 0 && now - reservations.Peek() > ReservationLifetime.TotalMilliseconds) reservations.Dequeue();
+            if (Volatile.Read(ref connected) + reservations.Count >= max) return false;
+            reservations.Enqueue(now);
+            return true;
+        }
     }
 
+    internal void ConnectionUp()
+    {
+        lock (gate)
+        {
+            if (reservations.Count > 0) reservations.Dequeue();
+            int now = ++connected;
+            if (now > peak) peak = now;
+        }
+    }
+
+    internal void ConnectionDown() { lock (gate) connected = Math.Max(0, connected - 1); }
+    internal void Opened() => Interlocked.Increment(ref active);
     internal void Closed() => Interlocked.Decrement(ref active);
 }
 
@@ -36,6 +68,8 @@ internal sealed class CountingCircuitHandler(CircuitCounter counter) : CircuitHa
 {
     public override Task OnCircuitOpenedAsync(Circuit circuit, CancellationToken ct) { counter.Opened(); return Task.CompletedTask; }
     public override Task OnCircuitClosedAsync(Circuit circuit, CancellationToken ct) { counter.Closed(); return Task.CompletedTask; }
+    public override Task OnConnectionUpAsync(Circuit circuit, CancellationToken ct) { counter.ConnectionUp(); return Task.CompletedTask; }
+    public override Task OnConnectionDownAsync(Circuit circuit, CancellationToken ct) { counter.ConnectionDown(); return Task.CompletedTask; }
 }
 
 /// <summary>Logs a one-line resource summary periodically (counts and sizes only: no code, users or traces).</summary>
@@ -64,13 +98,15 @@ internal sealed class ResourceMonitor(CompileGate gate, CircuitCounter circuits,
             long ws = Environment.WorkingSet;
             if (ws > peakWorkingSet) peakWorkingSet = ws;
             var gc = GC.GetGCMemoryInfo();
+            var (runs, interpretAvg, interpretMax) = AlgoSharp.Playground.Execution.ExecutionMetrics.Snapshot();
             bool rejectedSince = previous is not null && (s.Busy > previous.Busy || s.TimedOut > previous.TimedOut);
             log.Log(rejectedSince ? LogLevel.Warning : LogLevel.Information,
                 "resources compile_active={Active} compile_queued={Queued} compile_ok={Ok} compile_busy={Busy} compile_cooldown={Cooldown} " +
                 "compile_timeout={TimedOut} compile_superseded={Superseded} compile_avg_ms={AvgMs} compile_max_ms={MaxMs} " +
-                "circuits={Circuits} circuits_peak={CircuitsPeak} working_set_mb={WorkingSetMb} peak_working_set_mb={PeakMb} gc_heap_mb={HeapMb}",
+                "runs={Runs} trace_interpret_avg_ms={InterpretAvg} trace_interpret_max_ms={InterpretMax} " +
+                "circuits={Circuits} connected={Connected} circuits_peak={CircuitsPeak} working_set_mb={WorkingSetMb} peak_working_set_mb={PeakMb} gc_heap_mb={HeapMb}",
                 s.Active, s.Queued, s.Ok, s.Busy, s.Cooldown, s.TimedOut, s.Superseded, s.AvgMs, s.MaxMs,
-                circuits.Active, circuits.Peak, ws >> 20, peakWorkingSet >> 20, gc.HeapSizeBytes >> 20);
+                runs, interpretAvg, interpretMax, circuits.Active, circuits.Connected, circuits.Peak, ws >> 20, peakWorkingSet >> 20, gc.HeapSizeBytes >> 20);
             previous = s;
         }
     }
@@ -108,7 +144,7 @@ public static class ResourceProtection
         var options = app.Services.GetRequiredService<ResourceOptions>();
         app.Use((ctx, next) =>
         {
-            if (ctx.Request.Path.StartsWithSegments("/_blazor/negotiate") && circuits.Active >= options.MaxCircuits)
+            if (ctx.Request.Path.StartsWithSegments("/_blazor/negotiate") && !circuits.TryReserve(options.MaxCircuits))
             {
                 ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                 ctx.Response.Headers.RetryAfter = "30";
@@ -165,7 +201,8 @@ public static class ResourceProtection
         app.MapGet("/diag/stats", (CompileGate gate, CircuitCounter circuits) =>
         {
             var gc = GC.GetGCMemoryInfo();
-            return Results.Ok(new { gate = gate.Snapshot(), circuits = circuits.Active, workingSetMb = Environment.WorkingSet >> 20, gcHeapMb = gc.HeapSizeBytes >> 20 });
+            var (runs, interpretAvg, interpretMax) = AlgoSharp.Playground.Execution.ExecutionMetrics.Snapshot();
+            return Results.Ok(new { gate = gate.Snapshot(), runs, interpretAvgMs = interpretAvg, interpretMaxMs = interpretMax, circuits = circuits.Active, connected = circuits.Connected, peakCircuits = circuits.Peak, workingSetMb = Environment.WorkingSet >> 20, gcHeapMb = gc.HeapSizeBytes >> 20 });
         });
     }
 

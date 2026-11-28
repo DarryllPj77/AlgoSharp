@@ -35,23 +35,23 @@ public static class BrowserExecution
         }
         catch (JsonException)
         {
-            return Fail("The browser runner returned an unreadable answer.");
+            return Fail("invalid-trace", "The browser runner returned an unreadable answer.");
         }
         switch (envelope?.Status)
         {
             case "ok":
                 break;
             case "timeout":
-                return Fail($"Time limit exceeded: your code ran for more than {timeoutSeconds} s and was stopped.");
+                return Fail("timeout", $"Time limit exceeded: your code ran for more than {timeoutSeconds} s and was stopped.");
             case "unsupported":
-                return Fail("This browser can't run code: it needs Web Workers and WebAssembly support.");
+                return Fail("unsupported", "This browser can't run code: it needs Web Workers and WebAssembly support.");
             case "startup":
-                return Fail($"The in-browser runner couldn't start: {Clip(envelope.Error)}");
+                return Fail("startup", $"The in-browser runner couldn't start: {Clip(envelope.Error)}");
             case "crashed":
-                return Fail("The in-browser runner stopped unexpectedly. This usually means a stack overflow from recursion " +
+                return Fail("crashed", "The in-browser runner stopped unexpectedly. This usually means a stack overflow from recursion " +
                             "that never ends (for example a lambda calling itself), which the step limit can't catch.");
             default:
-                return Fail("The browser runner returned an unknown status.");
+                return Fail("invalid-trace", "The browser runner returned an unknown status.");
         }
 
         RunResponse? response;
@@ -61,13 +61,13 @@ public static class BrowserExecution
         }
         catch (JsonException)
         {
-            return Fail("The browser runner returned an unreadable trace.");
+            return Fail("invalid-trace", "The browser runner returned an unreadable trace.");
         }
-        if (response?.Cases is null) return Fail("The browser runner returned no result.");
-        if (response.Cases.Count > request.Cases.Count) return Fail("The browser runner returned more results than test cases.");
+        if (response?.Cases is null) return Fail("invalid-trace", "The browser runner returned no result.");
+        if (response.Cases.Count > request.Cases.Count) return Fail("invalid-trace", "The browser runner returned more results than test cases.");
         // A modified browser can send anything. The real tracer never exceeds these bounds, and the server's
         // frame builder walks node links recursively, so anything outside them is refused rather than drawn.
-        if (!response.Cases.All(WithinTracerLimits)) return Fail("The browser runner returned a trace outside AlgoSharp's limits.");
+        if (!response.Cases.All(WithinTracerLimits)) return Fail("invalid-trace", "The browser runner returned a trace outside AlgoSharp's limits.");
 
         // Keep the trace within the limits the request asked for (Tr stops at MaxEvents; allow the final events).
         var cases = response.Cases.Select(c => c with
@@ -99,7 +99,7 @@ public static class BrowserExecution
 
     private static bool Short(string? s, int max) => s is null || s.Length <= max;
 
-    private static SandboxResult Fail(string message) => new(false, message, null);
+    private static SandboxResult Fail(string kind, string message) => new(false, message, null) { FailureKind = kind };
 
     private static string Clip(string? s) => string.IsNullOrWhiteSpace(s) ? "unknown error." : s.Length > 200 ? s[..200] + "…" : s;
 }
