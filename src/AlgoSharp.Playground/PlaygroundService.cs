@@ -15,15 +15,29 @@ public sealed record PlaygroundRun(
     CompileResult Compile,
     string? ExecutionError,
     IReadOnlyList<CaseOutcome> Cases,
-    Advice? Advice);
+    Advice? Advice)
+{
+    /// <summary>Set when the server turned the run away (busy, cooldown, timeout): nothing was compiled or run.</summary>
+    public GateStatus? Rejected { get; init; }
+}
 
 /// <summary>Compile → (sandbox) execute → check → build visual frames → advise.</summary>
-public sealed class PlaygroundService(ICodeExecutor executor, SandboxOptions options)
+public sealed class PlaygroundService(ICodeExecutor executor, SandboxOptions options, CompileGate? gate = null)
 {
     public Task<SandboxStatus> StatusAsync(CancellationToken ct = default) => executor.GetStatusAsync(ct);
 
     /// <summary>Compiles and analyzes only. Never executes anything.</summary>
     public static CompileResult Check(PlaygroundProblem problem, string code) => CodeCompiler.Compile(code, problem.Entry);
+
+    /// <summary>
+    /// The live as-you-type check: diagnostics only (no instrumentation or emit), through the compile gate.
+    /// Older checks from the same user are dropped in favour of the newest code.
+    /// </summary>
+    public Task<GateResult<CompileResult>> CheckAsync(PlaygroundProblem problem, string code, string user, CancellationToken ct = default) =>
+        Gated(user, CompileKind.Check, token => CodeCompiler.Compile(code, problem.Entry, diagnosticsOnly: true, token), ct);
+
+    private async Task<GateResult<T>> Gated<T>(string user, CompileKind kind, Func<CancellationToken, T> work, CancellationToken ct) =>
+        gate is null ? new(GateStatus.Ok, work(ct), null) : await gate.RunAsync(user, kind, work, ct);
 
     /// <summary>Builds the sandbox request (used by the service and by tests).</summary>
     public static RunRequest BuildRequest(PlaygroundProblem problem, CompileResult compile, IReadOnlyList<PlaygroundCase> cases, int maxEvents, int maxOutput) =>
@@ -39,19 +53,24 @@ public sealed class PlaygroundService(ICodeExecutor executor, SandboxOptions opt
     public Task<PlaygroundRun> RunAsync(PlaygroundProblem problem, string code, IReadOnlyList<PlaygroundCase> cases, string? caller = null, CancellationToken ct = default) =>
         RunWithAsync(problem, code, cases, (request, token) => executor is ICallerAwareExecutor perCaller && caller is not null
             ? perCaller.RunAsync(request, caller, token)
-            : executor.RunAsync(request, token), ct);
+            : executor.RunAsync(request, token), caller, ct);
 
     /// <summary>
     /// Same pipeline with a caller-supplied execution step, used for browser execution where the page's own
     /// Web Worker runs the compiled assembly. Compilation, checking and frame building stay on the server.
     /// </summary>
     public async Task<PlaygroundRun> RunWithAsync(PlaygroundProblem problem, string code, IReadOnlyList<PlaygroundCase> cases,
-        Func<RunRequest, CancellationToken, Task<SandboxResult>> execute, CancellationToken ct = default)
+        Func<RunRequest, CancellationToken, Task<SandboxResult>> execute, string? user = null, CancellationToken ct = default)
     {
-        var compile = CodeCompiler.Compile(code, problem.Entry);
+        // Only the compilation holds a compile slot; running (in the browser or a sandbox) happens after it's released.
+        var gated = await Gated(user ?? "anonymous", CompileKind.Run, token => CodeCompiler.Compile(code, problem.Entry, ct: token), ct);
+        if (!gated.Ok || gated.Value is null)
+            return new(new CompileResult(false, [], null, null, null, null), gated.Message ?? "The run was cancelled.", [], null) { Rejected = gated.Status };
+        var compile = gated.Value;
         if (!compile.Success) return new(compile, null, [], null);
 
         var request = BuildRequest(problem, compile, cases, options.MaxEvents, options.MaxOutputChars);
+        compile = compile with { Assembly = null }; // the request carries it now; don't keep a second copy per session
         var sandbox = await execute(request, ct);
         if (!sandbox.Ok || sandbox.Response is null) return new(compile, sandbox.Error ?? "Execution failed.", [], Advise(problem, compile, []));
         if (!sandbox.Response.Ok) return new(compile, sandbox.Response.Error, [], Advise(problem, compile, []));

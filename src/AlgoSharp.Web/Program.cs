@@ -39,6 +39,7 @@ builder.Services.AddSingleton<ICodeExecutor>(sp => sandbox.Mode.ToLowerInvariant
 builder.Services.AddSingleton(new Quotas(
     builder.Configuration.GetSection("Execution:Limits").Get<QuotaLimits>() ?? new QuotaLimits(PerCallerPer10Minutes: 30, PerCallerPerDay: 300, PerCallerConcurrent: 1, GlobalPerMinute: 120),
     TimeProvider.System));
+builder.Services.AddResourceProtection(builder.Configuration); // compile gate, session cap, resource monitor
 builder.Services.AddSingleton<PlaygroundService>();
 builder.Services.AddScoped<AlgoSharp.Web.Services.LocalLibrary>();
 builder.Services.AddScoped<AlgoSharp.Web.Services.BrowserRunner>();
@@ -111,6 +112,8 @@ app.UseRateLimiter();
 app.UseAntiforgery();
 
 app.MapAlgoSharpHealthChecks();
+app.UseCircuitAdmission();
+app.MapLoadTestEndpoints();
 app.UseBrowserRunnerHeaders();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()

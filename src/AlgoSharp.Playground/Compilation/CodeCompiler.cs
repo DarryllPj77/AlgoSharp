@@ -73,11 +73,17 @@ public static class CodeCompiler
         nullableContextOptions: NullableContextOptions.Disable,
         concurrentBuild: false);
 
-    public static CompileResult Compile(string source, EntrySignature entry)
-    {
-        if (source.Length > 20_000) return Fail("Code is too long (20,000 characters max).");
+    public const int MaxSourceLength = 20_000;
 
-        var tree = CSharpSyntaxTree.ParseText(source, ParseOptions, path: "Solution.cs");
+    /// <param name="diagnosticsOnly">
+    /// Stop after diagnostics, safety analysis and entry lookup (no instrumentation, no second compilation,
+    /// no emit): what the live as-you-type check needs, at roughly half the CPU and memory of a full compile.
+    /// </param>
+    public static CompileResult Compile(string source, EntrySignature entry, bool diagnosticsOnly = false, CancellationToken ct = default)
+    {
+        if (source.Length > MaxSourceLength) return Fail($"Code is too long ({MaxSourceLength:N0} characters max).");
+
+        var tree = CSharpSyntaxTree.ParseText(source, ParseOptions, path: "Solution.cs", cancellationToken: ct);
         var usings = CSharpSyntaxTree.ParseText(GlobalUsings, ParseOptions, path: "GlobalUsings.cs");
         var declared = tree.GetRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>().Select(t => t.Identifier.Text).ToHashSet();
         var support = new List<SyntaxTree> { usings };
@@ -88,7 +94,7 @@ public static class CodeCompiler
         var compilation = CSharpCompilation.Create("UserSolution", [tree, .. support], References.Value, Options);
         var model = compilation.GetSemanticModel(tree);
 
-        var diagnostics = compilation.GetDiagnostics()
+        var diagnostics = compilation.GetDiagnostics(ct)
             .Where(d => d.Severity >= DiagnosticSeverity.Warning && d.Location.SourceTree == tree)
             .Select(ToDiagnostic)
             .ToList();
@@ -102,6 +108,7 @@ public static class CodeCompiler
             diagnostics.Add(new Diagnostic("error", entryError, 1, 1, "AS0100"));
             return new(false, Sorted(diagnostics), null, null, null, tree);
         }
+        if (diagnosticsOnly) return new(true, Sorted(diagnostics), null, type, method, tree);
 
         // Instrument the original tree, then compile the instrumented version.
         SyntaxNode instrumentedRoot;
@@ -118,7 +125,7 @@ public static class CodeCompiler
         var traced = CSharpCompilation.Create("UserSolution", [instrumented, .. support], References.Value, Options);
 
         using var stream = new MemoryStream();
-        var emit = traced.Emit(stream);
+        var emit = traced.Emit(stream, cancellationToken: ct);
         if (!emit.Success)
         {
             var first = emit.Diagnostics.FirstOrDefault(d => d.Severity == DiagnosticSeverity.Error);

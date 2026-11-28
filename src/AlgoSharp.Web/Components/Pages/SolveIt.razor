@@ -205,11 +205,15 @@ else
                 <div class="box-card">
                     <header><Icon Name="info" /> Compiler <span class="muted">@(compile is null ? "" : compile.Errors.Any() ? $"{compile.Errors.Count()} error(s)" : "no errors")</span></header>
                     <div class="body diag-list">
-                        @if (compile is null)
+                        @if (checkNotice is not null)
+                        {
+                            <p class="diag warning busy-note">@checkNotice</p>
+                        }
+                        @if (compile is null && checkNotice is null)
                         {
                             <p class="vars-empty">Compiling…</p>
                         }
-                        else if (!compile.Diagnostics.Any())
+                        else if (compile is not null && !compile.Diagnostics.Any())
                         {
                             <p class="diag ok">@(status?.Available == false ? "✓ Compiles. Running code isn't available here right now (see below)." : "✓ Compiles. Press Run & visualize to run it in the sandbox.")</p>
                         }
@@ -572,6 +576,9 @@ else
     private bool AllPassed => run is { } r && r.Cases.Any(c => c.Verdict?.Graded == true) && r.Cases.Where(c => c.Verdict?.Graded == true).All(c => c.Verdict!.Passed);
 
     private bool InBrowser => Executor is BrowserModeExecutor;
+    private readonly CancellationTokenSource life = new(); // cancels queued or running compiles when the page goes away
+    private string? checkNotice;
+    private bool creatingEditor;
     private ProblemStatus Status => progress?.Status ?? ProblemStatus.NotStarted;
     private string StatusLabel => Status switch { ProblemStatus.InProgress => "In progress", ProblemStatus.Solved => "Solved", _ => "Not started" };
 
@@ -690,8 +697,8 @@ else
         foreach (var p in problem.Params) newArgs[p.Name] = p.Placeholder;
         code = problem.StarterCode;
         if (!signedIn) return; // description only: no compile, no sandbox status
-        compile = PlaygroundService.Check(problem, code);
-        RefreshAdvice();
+        compile = null;
+        await RecheckAsync();
         if (editor is not null)
         {
             try { await editor.InvokeVoidAsync("setValue", code); await PushMarkers(); } catch (JSDisconnectedException) { }
@@ -712,6 +719,9 @@ else
         if (problem is null) return;
         if (editor is null && editorError is null)
         {
+            // Renders can arrive while the editor is still being created (checks are async): create it only once.
+            if (creatingEditor) return;
+            creatingEditor = true;
             try
             {
                 selfRef ??= DotNetObjectReference.Create(this);
@@ -726,6 +736,7 @@ else
                 StateHasChanged();
             }
             catch (JSDisconnectedException) { }
+            finally { creatingEditor = false; }
             return;
         }
         if (editor is null) return;
@@ -771,8 +782,8 @@ else
         foreach (var p in problem.Params) newArgs[p.Name] = p.Placeholder;
         code = string.IsNullOrEmpty(progress.Draft) ? problem.StarterCode : progress.Draft;
         draftState = string.IsNullOrEmpty(progress.Draft) ? "" : "Draft restored";
-        compile = PlaygroundService.Check(problem, code);
-        RefreshAdvice();
+        compile = null;
+        await RecheckAsync();
         run = null;
         hintsShown = 0;
         if (editor is not null)
@@ -823,10 +834,8 @@ else
     {
         if (!signedIn || editor is null || problem is null) return;
         code = await editor.InvokeAsync<string>("getValue");
-        compile = PlaygroundService.Check(problem, code);
-        RefreshAdvice();
-        await PushMarkers();
-        await SaveDraft();
+        await SaveDraft(); // saved first: a busy server never costs the user their code
+        await RecheckAsync();
         StateHasChanged();
     }
 
@@ -858,17 +867,23 @@ else
             if (lease is null)
             {
                 Log.LogInformation("audit event=run outcome=throttled-web account={Account}", accountId);
-                compile = PlaygroundService.Check(problem, code);
-                run = new PlaygroundRun(compile, limited, [], null);
+                run = new PlaygroundRun(compile ?? new CompileResult(false, [], null, null, null, null), limited, [], null) { Rejected = GateStatus.Cooldown };
                 _ = Sound.PlayAsync(SoundCues.Fail);
                 return;
             }
             string caller = Executor is RemoteExecutor remote ? remote.CallerFor(accountId!) : accountId!;
             // Browser mode: the instrumented assembly runs in this visitor's own .NET WebAssembly worker.
             run = InBrowser
-                ? await Service.RunWithAsync(problem, code, cases, Browser.RunAsync)
-                : await Service.RunAsync(problem, code, cases, caller);
-            Log.LogInformation("audit event=run outcome={Outcome} account={Account}", run.ExecutionError is null ? "executed" : "not-executed", accountId);
+                ? await Service.RunWithAsync(problem, code, cases, Browser.RunAsync, accountId, life.Token)
+                : await Service.RunAsync(problem, code, cases, caller, life.Token);
+            Log.LogInformation("audit event=run outcome={Outcome} account={Account}",
+                run.Rejected is { } why ? "rejected-" + why.ToString().ToLowerInvariant() : run.ExecutionError is null ? "executed" : "not-executed", accountId);
+            if (run.Rejected is not null)
+            {
+                // Turned away before compiling (busy, cooldown, timeout): keep the current diagnostics and code.
+                _ = Sound.PlayAsync(SoundCues.Fail);
+                return;
+            }
             compile = run.Compile;
             advice = run.Advice;
             await PushMarkers();
@@ -886,6 +901,30 @@ else
         finally
         {
             running = false;
+        }
+    }
+
+    /// <summary>
+    /// Live check through the server's compile gate. Ok: new diagnostics. Superseded or cancelled: a newer check
+    /// (or the page closing) made it moot. Busy or timeout: keep the previous diagnostics and say why.
+    /// </summary>
+    private async Task RecheckAsync()
+    {
+        if (problem is null || accountId is null) return;
+        var result = await Service.CheckAsync(problem, code, accountId, life.Token);
+        switch (result.Status)
+        {
+            case GateStatus.Ok:
+                compile = result.Value;
+                checkNotice = null;
+                RefreshAdvice();
+                await PushMarkers();
+                break;
+            case GateStatus.Superseded or GateStatus.Cancelled:
+                break;
+            default:
+                checkNotice = result.Message;
+                break;
         }
     }
 
@@ -931,10 +970,8 @@ else
         if (problem is null) return;
         code = problem.StarterCode;
         if (editor is not null) await editor.InvokeVoidAsync("setValue", code);
-        compile = PlaygroundService.Check(problem, code);
-        RefreshAdvice();
-        await PushMarkers();
         await SaveDraft();
+        await RecheckAsync();
     }
 
     private async Task RefreshStatus() => status = await Service.StatusAsync();
@@ -977,6 +1014,8 @@ else
 
     public async ValueTask DisposeAsync()
     {
+        life.Cancel();
+        life.Dispose();
         player.Dispose();
         try
         {

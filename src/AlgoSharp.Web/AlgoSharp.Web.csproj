@@ -13,6 +13,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!-- Small instances (Render Free: 0.1 CPU, 512 MB): workstation, non-concurrent GC keeps the heap and threads lean. -->
+    <ServerGarbageCollector>false</ServerGarbageCollector>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <UserSecretsId>78ada1e9-8127-46d6-9548-b364f85fc082</UserSecretsId>
   </PropertyGroup>
 
